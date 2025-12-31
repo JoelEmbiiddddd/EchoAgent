@@ -1,0 +1,18 @@
+# Simple Workflow Configuration - Two Agent Workflow
+
+# Dataset defaults
+data:
+  prompt: |
+    Find the outstanding papers of ACL 2025, extract their title, author list, keywords, abstract, url in one sentence.
+
+# Workflow settings
+pipeline:
+  verbose: true
+
+# Agent profiles
+agents:
+  routing_agent:
+    profile: routing_agent_simple
+
+  web_searcher_agent:
+    profile: web_searcher
