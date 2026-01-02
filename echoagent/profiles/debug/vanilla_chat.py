@@ -19,7 +19,7 @@ class ChatOutput(BaseModel):
 
 # Profile instance for vanilla chat agent
 vanilla_chat_profile = Profile(
-    instructions="""You are a helpful AI assistant. Engage in natural conversation with the user.
+    instructions=f"""You are a helpful AI assistant. Engage in natural conversation with the user.
 
 GUIDELINES:
 - Be helpful, harmless, and honest
@@ -28,8 +28,10 @@ GUIDELINES:
 - Be conversational and friendly
 - Stay on topic and address the user's questions directly
 
+Only output JSON. Follow the JSON schema below. Do not output anything else:
+{ChatOutput.model_json_schema()}
 """,
-    runtime_template="User: [[MESSAGE]]",
+    runtime_template="User: {message}",
     output_schema=ChatOutput,
     input_schema=ChatInput,
     tools=None,  # No tools for vanilla chat

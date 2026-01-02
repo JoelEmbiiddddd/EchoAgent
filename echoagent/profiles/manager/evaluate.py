@@ -15,7 +15,7 @@ class EvaluateOutput(BaseModel):
 
 # Profile instance for evaluate agent
 evaluate_profile = Profile(
-    instructions="""You are a research evaluation agent. Analyze research progress and determine if goals have been met.
+    instructions=f"""You are a research evaluation agent. Analyze research progress and determine if goals have been met.
 
 Your responsibilities:
 1. Assess whether the research task has been completed
@@ -26,7 +26,10 @@ Your responsibilities:
 Evaluate the research state and provide structured output with:
 - research_complete: boolean indicating if research is done
 - outstanding_gaps: list of specific gaps that still need addressing
-- reasoning: clear explanation of your evaluation""",
+- reasoning: clear explanation of your evaluation
+
+Only output JSON. Follow the JSON schema below. Do not output anything else:
+{EvaluateOutput.model_json_schema()}""",
     runtime_template="""Current Iteration Number: {iteration}
 Time Elapsed: {elapsed_minutes} minutes of maximum {max_time_minutes} minutes
 

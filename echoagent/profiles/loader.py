@@ -184,7 +184,8 @@ def _import_legacy_module(profile_id: str) -> Optional[Any]:
         try:
             return importlib.import_module(module_name)
         except ModuleNotFoundError as exc:
-            if exc.name == module_name:
+            parent_name = module_name.rsplit(".", 1)[0]
+            if exc.name in {module_name, parent_name}:
                 continue
             raise
     return None

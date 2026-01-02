@@ -13,11 +13,18 @@ class Context:
 
     def __init__(self, state: Optional[ConversationState] = None) -> None:
         """Initialize context with conversation state."""
+        modules: Optional[list[str]] = None
+        if isinstance(state, (list, tuple, set)):
+            modules = [str(item) for item in state]
+            state = None
         if state is not None and not isinstance(state, ConversationState):
             raise TypeError(f"state must be ConversationState or None, got {type(state)}")
         self._state = state or ConversationState()
         self.modules: Dict[str, Any] = {}
         self.context_modules = self.modules
+        if modules:
+            for name in modules:
+                self.modules.setdefault(name, None)
 
     @property
     def state(self) -> ConversationState:

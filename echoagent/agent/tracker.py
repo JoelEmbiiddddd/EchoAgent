@@ -3,6 +3,8 @@
 from contextlib import nullcontext, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+import logging
+import os
 from pathlib import Path
 import time
 import uuid
@@ -26,6 +28,24 @@ _current_runtime_tracker: ContextVar[Optional['RuntimeTracker']] = ContextVar(
     'current_runtime_tracker',
     default=None
 )
+
+_TRACE_EXPORT_FILTER_ADDED = False
+
+
+class _TraceExportFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        return "OPENAI_API_KEY is not set, skipping trace export" not in message
+
+
+def _suppress_trace_export_warning() -> None:
+    global _TRACE_EXPORT_FILTER_ADDED
+    if _TRACE_EXPORT_FILTER_ADDED:
+        return
+    if os.environ.get("OPENAI_API_KEY"):
+        return
+    logging.getLogger("openai.agents").addFilter(_TraceExportFilter())
+    _TRACE_EXPORT_FILTER_ADDED = True
 
 
 @dataclass
@@ -107,6 +127,8 @@ class RuntimeTracker:
         self.experiment_id = experiment_id
         self.pipeline_slug = pipeline_slug
         self.run_id = experiment_id or f"run-{uuid.uuid4().hex}"
+        if self.enable_tracing:
+            _suppress_trace_export_warning()
 
         # Components owned by tracker (created on-demand)
         self._printer: Optional[Printer] = None

@@ -1,0 +1,9 @@
+# Skill Smoke Test Workflow Configuration
+
+pipeline:
+  verbose: true
+  skill_smoke_test:
+    test_prompt: "web search ai"
+    top_k: 3
+    auto_activate: true
+    force_skill_id: ""

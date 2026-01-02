@@ -1,0 +1,16 @@
+# Skill Chat Workflow Configuration
+
+data:
+  prompt: |
+    Give me the latest news about AI agents.
+
+pipeline:
+  verbose: true
+  skills:
+    topk: 5
+    auto_threshold: 0.65
+    suggest_threshold: 0.35
+
+agents:
+  skill_chat_agent:
+    profile: vanilla_chat

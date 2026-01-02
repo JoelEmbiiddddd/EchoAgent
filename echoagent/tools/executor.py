@@ -24,6 +24,22 @@ class ToolExecutor:
 
     async def execute(self, call: ToolCall, *, context: ToolContext | None = None) -> ToolResult:
         ctx = _resolve_context(context or self._context)
+        allowlist, active_skill_id = _resolve_allowlist(ctx)
+        if allowlist is not None and call.name not in allowlist:
+            tool_result = ToolResult(
+                ok=False,
+                error=ToolError(
+                    code="TOOL_NOT_ALLOWED",
+                    message=f"Tool '{call.name}' is not allowed",
+                ),
+            )
+            tool_result.meta.setdefault("tool_name", call.name)
+            tool_result.meta.setdefault("call_id", call.call_id)
+            tool_result.meta.setdefault("allowed_tools", list(allowlist))
+            if active_skill_id:
+                tool_result.meta.setdefault("active_skill_id", active_skill_id)
+            _record_tool_denied(ctx, call, tool_result)
+            return tool_result
         spec, handler = self._registry.get(call.name)
         _ = spec
         tracker = ctx.tracker
@@ -85,3 +101,40 @@ def _extract_artifacts(result: Any) -> list[ArtifactRef]:
     if isinstance(result, list) and result and all(isinstance(item, ArtifactRef) for item in result):
         return list(result)
     return []
+
+
+def _resolve_allowlist(ctx: ToolContext) -> tuple[Optional[list[str]], Optional[str]]:
+    env_allowed = _normalize_allowlist(ctx.env.get("allowed_tools") if ctx.env else None)
+    state_allowed = None
+    active_skill_id = None
+    tracker = ctx.tracker
+    if tracker is not None:
+        tracker_context = getattr(tracker, "context", None)
+        state = getattr(tracker_context, "state", None)
+        execution = getattr(state, "execution", None)
+        state_allowed = _normalize_allowlist(getattr(execution, "allowed_tools", None))
+        active_skill_id = getattr(execution, "active_skill_id", None)
+    return (env_allowed if env_allowed is not None else state_allowed), active_skill_id
+
+
+def _normalize_allowlist(value: Any) -> Optional[list[str]]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        items = [item.strip() for item in value.split(",") if item.strip()]
+        return items
+    if isinstance(value, (list, tuple, set)):
+        items = [str(item).strip() for item in value if str(item).strip()]
+        return items
+    return None
+
+
+def _record_tool_denied(ctx: ToolContext, call: ToolCall, tool_result: ToolResult) -> None:
+    tracker = ctx.tracker
+    message = f"Tool '{call.name}' denied by allowlist"
+    if tracker is not None:
+        tracker.log_panel("Tool Denied", message)
+    tracker_context = getattr(tracker, "context", None) if tracker is not None else None
+    state = getattr(tracker_context, "state", None)
+    if state is not None:
+        state.record_event("TOOL_DENIED", message, meta=dict(tool_result.meta))

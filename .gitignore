@@ -6,7 +6,8 @@ AGENTS.md
 verification.md
 data
 refactor
-.serena/
+.serena
+outputs/
 
 
 # Python cache

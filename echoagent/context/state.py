@@ -3,7 +3,6 @@ from __future__ import annotations
 import time
 import warnings
 from typing import Any, Callable, Dict, List, Optional, Type
-from typing import Literal
 
 from pydantic import BaseModel, Field, PrivateAttr
 
@@ -39,10 +38,17 @@ class BaseIterationRecord(BaseModel):
 
 
 class ContextEvent(BaseModel):
-    type: Literal["USER_MESSAGE", "ASSISTANT_MESSAGE", "TOOL_RESULT"]
+    type: str
     content: str
     meta: Dict[str, Any] = Field(default_factory=dict)
     created_at: float = Field(default_factory=time.time)
+
+
+class ExecutionContext(BaseModel):
+    active_skill_id: Optional[str] = None
+    allowed_tools: Optional[List[str]] = None
+    model_override: Optional[str] = None
+    disable_model_invocation: bool = False
 
 
 class ConversationState(BaseModel):
@@ -56,6 +62,12 @@ class ConversationState(BaseModel):
     formatted_query: Optional[str] = None
     max_time_minutes: Optional[float] = None
     available_agents: Dict[str, str] = Field(default_factory=dict)
+    execution: ExecutionContext = Field(default_factory=ExecutionContext)
+    available_skills: List[Dict[str, Any]] = Field(default_factory=list)
+    active_skill: Optional[Dict[str, Any]] = None
+    active_skill_markdown: str = ""
+    skills_index_text: str = ""
+    active_skill_text: str = ""
 
     _iteration_model: Type[BaseIterationRecord] = PrivateAttr(default=BaseIterationRecord)
 
@@ -103,6 +115,30 @@ class ConversationState(BaseModel):
         if not self.available_agents:
             return ""
         lines = [f"- {agent_name}: {description}" for agent_name, description in self.available_agents.items()]
+        return "\n".join(lines)
+
+    @property
+    def available_skills_text(self) -> str:
+        if self.skills_index_text:
+            return self.skills_index_text
+        if not self.available_skills:
+            return ""
+        lines: List[str] = []
+        for item in self.available_skills:
+            name = _get_skill_field(item, "name")
+            description = _get_skill_field(item, "description")
+            tags = _get_skill_field(item, "tags")
+            if not name and not description:
+                continue
+            line = f"- {name}: {description}" if description else f"- {name}"
+            if tags:
+                if isinstance(tags, list):
+                    tag_text = ", ".join(str(tag) for tag in tags if str(tag))
+                else:
+                    tag_text = str(tags)
+                if tag_text:
+                    line = f"{line} [tags: {tag_text}]"
+            lines.append(line)
         return "\n".join(lines)
 
     @property
@@ -207,3 +243,9 @@ class ConversationState(BaseModel):
 
 def create_conversation_state() -> ConversationState:
     return ConversationState()
+
+
+def _get_skill_field(item: Any, key: str) -> Any:
+    if isinstance(item, dict):
+        return item.get(key)
+    return getattr(item, key, None)

@@ -99,6 +99,30 @@ class ContextAssembler:
                 )
             )
 
+        skill_index = getattr(state, "available_skills_text", "") or getattr(state, "skills_index_text", "")
+        block_policy = apply_block_policy("SKILL_INDEX", policy)
+        if skill_index and block_policy is not None:
+            blocks.append(
+                ContextBlock(
+                    name="SKILL_INDEX",
+                    content=f"[SKILL INDEX]\n{skill_index}",
+                    priority=97,
+                    max_chars=block_policy.max_chars,
+                )
+            )
+
+        active_skill = getattr(state, "active_skill_text", "") or getattr(state, "active_skill_markdown", "")
+        block_policy = apply_block_policy("ACTIVE_SKILL", policy)
+        if active_skill and block_policy is not None:
+            blocks.append(
+                ContextBlock(
+                    name="ACTIVE_SKILL",
+                    content=f"[ACTIVE SKILL]\n{active_skill}",
+                    priority=98,
+                    max_chars=block_policy.max_chars,
+                )
+            )
+
         event_history = self._render_message_history(getattr(state, "events", []) or [])
         block_policy = apply_block_policy("MESSAGE_HISTORY", policy)
         if event_history and block_policy is not None:
