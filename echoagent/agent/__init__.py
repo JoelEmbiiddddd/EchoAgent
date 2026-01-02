@@ -22,6 +22,7 @@ from echoagent.agent.tracker import (
     get_current_data_store,
 )
 from echoagent.agent.executor import agent_step
+from echoagent.agent.runner import AgentRunner, ExecutorRunner
 __all__ = [
     # Agents
     "EchoAgent",
@@ -29,6 +30,9 @@ __all__ = [
     "RuntimeTracker",
     # Execution primitives
     "agent_step",
+    # Runner interfaces
+    "AgentRunner",
+    "ExecutorRunner",
     # Runtime access
     "get_current_tracker",
     "get_current_data_store",

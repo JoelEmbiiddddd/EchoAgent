@@ -1,6 +1,9 @@
 import asyncio
 import os
 import ssl
+import uuid
+import warnings
+from functools import lru_cache
 from typing import List, Optional, Union
 
 import aiohttp
@@ -272,18 +275,27 @@ def is_valid_url(url: str) -> bool:
     return True
 
 
-# ------- INITIALIZE SEARCH CLIENT AND DEFINE TOOL -------
+def _resolve_search_provider() -> str:
+    return os.getenv("SEARCH_PROVIDER", "serper")
 
-# Get search provider from environment (default to serper)
-SEARCH_PROVIDER = os.getenv("SEARCH_PROVIDER", "serper")
 
-# Initialize the search client based on provider
-if SEARCH_PROVIDER == "serper":
-    _search_client = SerperClient()
-elif SEARCH_PROVIDER == "searchxng":
-    _search_client = SearchXNGClient()
-else:
-    raise ValueError(f"Invalid search provider: {SEARCH_PROVIDER}. Must be 'serper' or 'searchxng'")
+@lru_cache(maxsize=1)
+def _get_search_client() -> Union[SerperClient, SearchXNGClient]:
+    provider = _resolve_search_provider()
+    if provider == "serper":
+        return SerperClient()
+    if provider == "searchxng":
+        return SearchXNGClient()
+    raise ValueError(f"Invalid search provider: {provider}. Must be 'serper' or 'searchxng'")
+
+
+async def search_and_scrape(query: str, max_results: int = 5) -> List[ScrapeResult]:
+    # Source: echoagent/tools/web_tools/search.py:289-312 -> echoagent/tools/web_tools/search.py
+    search_client = _get_search_client()
+    search_results = await search_client.search(
+        query, filter_for_relevance=False, max_results=max_results
+    )
+    return await scrape_urls(search_results)
 
 
 @function_tool
@@ -300,12 +312,20 @@ async def web_search(query: str) -> Union[List[ScrapeResult], str]:
             - description: The description of the search result
             - text: The full text content of the search result
     """
+    warnings.warn(
+        "web_search will migrate to ToolRegistry/ToolExecutor in a future release.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     try:
-        search_results = await _search_client.search(
-            query, filter_for_relevance=False, max_results=5
-        )
-        results = await scrape_urls(search_results)
-        return results
+        from echoagent.tools.executor import ToolExecutor
+        from echoagent.tools.models import ToolCall
+        call = ToolCall(name="web_search", args={"query": query}, call_id=uuid.uuid4().hex)
+        result = await ToolExecutor().execute(call)
+        if result.ok:
+            return result.data
+        if result.error and result.error.message:
+            return f"Sorry, I encountered an error while searching: {result.error.message}"
+        return "Sorry, I encountered an error while searching: Unknown error"
     except Exception as e:
-        # Return a user-friendly error message
         return f"Sorry, I encountered an error while searching: {str(e)}"

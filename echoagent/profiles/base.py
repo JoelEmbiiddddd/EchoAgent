@@ -1,71 +1,16 @@
 from __future__ import annotations
-from typing import Optional, List, Type, Any
+
+from typing import Any
+
 from pydantic import BaseModel, Field
+
+from echoagent.profiles.models import Profile
 
 
 class ToolAgentOutput(BaseModel):
     """Standard output for all tool agents"""
     output: str
     sources: list[str] = Field(default_factory=list)
-
-
-class Profile(BaseModel):
-    instructions: str = Field(description="The agent's system prompt/instructions that define its behavior")
-    runtime_template: str = Field(description="The runtime template for the agent's behavior")
-    model: Optional[str] = Field(default=None, description="Model override for this profile (e.g., 'gpt-4', 'claude-3-5-sonnet')")
-    output_schema: Optional[Type[BaseModel]] = Field(default=None, description="Pydantic model class for structured output validation")
-    tools: Optional[List[Any]] = Field(default=None, description="List of tool objects (e.g., FunctionTool instances) to use for this profile")
-    mcp_servers: Optional[List[Any]] = Field(default=None, description="List of MCP server specs (e.g., MCPServerStdio instances) for MCP tool integration")
-    description: Optional[str] = Field(default=None, description="Optional one-sentence description for agent capabilities (auto-extracted from instructions if not provided)")
-
-    class Config:
-        arbitrary_types_allowed = True
-
-    def get_description(self) -> str:
-        """Get description for this profile.
-
-        Returns explicit description if set, otherwise auto-extracts from instructions.
-        Auto-extraction takes the first sentence and removes 'You are a/an ' prefix.
-
-        Returns:
-            Description string
-        """
-        if self.description:
-            return self.description
-
-        # Auto-extract from first sentence of instructions
-        first_line = self.instructions.split('\n')[0].strip()
-
-        # Remove "You are a " or "You are an " prefix
-        if first_line.startswith("You are a "):
-            desc = first_line[10:].strip()  # len("You are a ") = 10
-        elif first_line.startswith("You are an "):
-            desc = first_line[11:].strip()  # len("You are an ") = 11
-        else:
-            desc = first_line
-
-        # Remove trailing period
-        if desc.endswith('.'):
-            desc = desc[:-1]
-
-        return desc
-
-    def render(self, **kwargs) -> str:
-        """Render the runtime template with provided keyword arguments.
-
-        Args:
-            **kwargs: Values to substitute for placeholders in the template.
-                     Keys are matched case-insensitively with {placeholder} patterns.
-
-        Returns:
-            Rendered template string with all placeholders replaced.
-
-        Examples:
-            profile.render(task="What is AI?", query="Previous context...")
-        """
-        # Convert all keys to lowercase and use .format() for substitution
-        kwargs_lower = {k.lower(): str(v) for k, v in kwargs.items()}
-        return self.runtime_template.format(**kwargs_lower)
 
 
 def load_all_profiles():
@@ -107,4 +52,3 @@ def load_all_profiles():
             raise e
 
     return profiles
-

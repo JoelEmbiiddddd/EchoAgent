@@ -13,6 +13,10 @@ from pygments import highlight
 from pygments.formatters import HtmlFormatter
 from pygments.lexers import JsonLexer, PythonLexer, get_lexer_by_name
 
+from echoagent.artifacts.models import ArtifactRef
+from echoagent.artifacts.store import ArtifactStore, FileSystemArtifactStore
+from echoagent.artifacts.writers.text import TextWriter
+
 if TYPE_CHECKING:
     from echoagent.artifacts.reporter import AgentStepRecord, PanelRecord
 
@@ -66,13 +70,16 @@ class ArtifactWriter:
         pipeline_slug: str,
         workflow_name: str,
         experiment_id: str,
+        run_id: str,
+        artifact_store: Optional[ArtifactStore] = None,
     ) -> None:
         self.base_dir = base_dir
         self.pipeline_slug = pipeline_slug
         self.workflow_name = workflow_name
         self.experiment_id = experiment_id
+        self.run_id = run_id
 
-        self.run_dir = base_dir / pipeline_slug / experiment_id
+        self.run_dir = base_dir / "runs" / run_id
         self.terminal_md_path = self.run_dir / "terminal_log.md"
         self.terminal_html_path = self.run_dir / "terminal_log.html"
         self.final_report_md_path = self.run_dir / "final_report.md"
@@ -87,6 +94,9 @@ class ArtifactWriter:
         self._start_time: Optional[float] = None
         self._started_at_iso: Optional[str] = None
         self._finished_at_iso: Optional[str] = None
+        self._artifact_store = artifact_store
+        self._artifact_refs: List[ArtifactRef] = []
+        self._text_writer = TextWriter()
 
     # ------------------------------------------------------------------ basics
 
@@ -270,10 +280,10 @@ class ArtifactWriter:
 
     # ------------------------------------------------------------- finalisation
 
-    def finalize(self) -> None:
+    def finalize(self) -> List[ArtifactRef]:
         """Persist markdown + HTML artefacts."""
         if self._start_time is None or self._finished_at_iso is not None:
-            return
+            return list(self._artifact_refs)
         self._finished_at_iso = _utc_timestamp()
         duration = round(time.time() - self._start_time, 3)
 
@@ -281,12 +291,63 @@ class ArtifactWriter:
         terminal_md = self._render_terminal_markdown(duration, terminal_sections)
         terminal_html = self._render_terminal_html(duration, terminal_sections)
 
-        self.terminal_md_path.write_text(terminal_md, encoding="utf-8")
-        self.terminal_html_path.write_text(terminal_html, encoding="utf-8")
+        store = self._get_store()
+        refs: List[ArtifactRef] = []
+        refs.append(
+            self._text_writer.write(
+                store,
+                "terminal_log.md",
+                terminal_md,
+                meta={"content_type": "text/markdown; charset=utf-8"},
+            )
+        )
+        refs.append(
+            self._text_writer.write(
+                store,
+                "terminal_log.html",
+                terminal_html,
+                meta={"content_type": "text/html; charset=utf-8"},
+            )
+        )
 
         final_md, final_html = self._render_final_report()
-        self.final_report_md_path.write_text(final_md, encoding="utf-8")
-        self.final_report_html_path.write_text(final_html, encoding="utf-8")
+        refs.append(
+            self._text_writer.write(
+                store,
+                "final_report.md",
+                final_md,
+                meta={"content_type": "text/markdown; charset=utf-8"},
+            )
+        )
+        refs.append(
+            self._text_writer.write(
+                store,
+                "final_report.html",
+                final_html,
+                meta={"content_type": "text/html; charset=utf-8"},
+            )
+        )
+
+        self._artifact_refs = refs
+        self._update_paths(refs)
+        return list(refs)
+
+    def _get_store(self) -> ArtifactStore:
+        if self._artifact_store is None:
+            self._artifact_store = FileSystemArtifactStore(self.run_dir)
+        return self._artifact_store
+
+    def _update_paths(self, refs: List[ArtifactRef]) -> None:
+        for ref in refs:
+            name = Path(ref.uri).name
+            if name == "terminal_log.md":
+                self.terminal_md_path = Path(ref.uri)
+            elif name == "terminal_log.html":
+                self.terminal_html_path = Path(ref.uri)
+            elif name == "final_report.md":
+                self.final_report_md_path = Path(ref.uri)
+            elif name == "final_report.html":
+                self.final_report_html_path = Path(ref.uri)
 
     def _build_terminal_sections(self) -> List[Dict[str, Any]]:
         """Collect ordered sections for terminal artefacts."""

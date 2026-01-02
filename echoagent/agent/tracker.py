@@ -3,13 +3,22 @@
 from contextlib import nullcontext, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from pathlib import Path
 import time
+import uuid
 from typing import Any, Dict, Optional
 
 from agents.tracing.create import trace
 from echoagent.utils import Printer
-from echoagent.context.data_store import DataStore
+from echoagent.utils.helpers import serialize_content
+from echoagent.utils.data_store import DataStore
 from echoagent.artifacts import RunReporter
+from echoagent.artifacts.models import ArtifactRef, ArtifactSettings
+from echoagent.artifacts.store import (
+    ArtifactStore,
+    FileSystemArtifactStore,
+    resolve_run_artifacts_root,
+)
 
 # Context variable to store the current runtime tracker
 # This allows tools to access the tracker without explicit parameter passing
@@ -78,6 +87,8 @@ class RuntimeTracker:
         enable_tracing: bool = True,
         trace_sensitive: bool = False,
         experiment_id: Optional[str] = None,
+        artifact_settings: Optional[ArtifactSettings] = None,
+        pipeline_slug: Optional[str] = None,
     ):
         """Initialize runtime tracker.
 
@@ -94,11 +105,16 @@ class RuntimeTracker:
         self.enable_tracing = enable_tracing
         self.trace_sensitive = trace_sensitive
         self.experiment_id = experiment_id
+        self.pipeline_slug = pipeline_slug
+        self.run_id = experiment_id or f"run-{uuid.uuid4().hex}"
 
         # Components owned by tracker (created on-demand)
         self._printer: Optional[Printer] = None
         self._reporter: Optional[RunReporter] = None
         self.data_store = DataStore(experiment_id=experiment_id)
+        self._artifact_settings = artifact_settings or ArtifactSettings()
+        self._artifact_store: Optional[ArtifactStore] = None
+        self._artifact_records: list[dict[str, Any]] = []
 
     @property
     def printer(self) -> Optional[Printer]:
@@ -109,6 +125,39 @@ class RuntimeTracker:
     def reporter(self) -> Optional[RunReporter]:
         """Get the reporter instance."""
         return self._reporter
+
+    @property
+    def artifact_settings(self) -> ArtifactSettings:
+        return self._artifact_settings
+
+    @property
+    def artifact_records(self) -> list[dict[str, Any]]:
+        return list(self._artifact_records)
+
+    def configure_artifacts(self, settings: ArtifactSettings) -> None:
+        self._artifact_settings = settings
+        self._artifact_store = None
+
+    def artifacts_enabled(self) -> bool:
+        return self._artifact_settings.enabled
+
+    def get_run_artifact_root(self) -> Path:
+        return resolve_run_artifacts_root(self.run_id, settings=self._artifact_settings)
+
+    def get_run_artifact_store(self) -> Optional[ArtifactStore]:
+        if not self.artifacts_enabled():
+            return None
+        if self._artifact_store is None:
+            self._artifact_store = FileSystemArtifactStore(self.get_run_artifact_root())
+        return self._artifact_store
+
+    def record_artifact(self, ref: ArtifactRef, *, event_type: Optional[str] = None) -> None:
+        self._artifact_records.append(
+            {
+                "type": event_type,
+                "artifact": ref.to_dict(),
+            }
+        )
 
     @property
     def current_iteration_index(self) -> int:
@@ -209,6 +258,61 @@ class RuntimeTracker:
                 error=error,
             )
 
+    def on_run_start(self, state: Optional[Any], meta: Optional[Dict[str, Any]] = None) -> None:
+        """编排器运行开始事件钩子。"""
+        _ = state
+        _ = meta
+
+    def on_tool_call(self, state: Optional[Any], tool_call: Any) -> None:
+        """工具调用事件钩子。"""
+        _ = state
+        _ = tool_call
+
+    def on_tool_result(self, state: Optional[Any], tool_result: Any) -> None:
+        """工具结果事件钩子。"""
+        _ = state
+        _ = tool_result
+        context = getattr(self, "context", None)
+        state_obj = getattr(context, "state", None) if context is not None else None
+        record_event = getattr(state_obj, "record_event", None)
+        if not callable(record_event):
+            return
+        content = None
+        if hasattr(tool_result, "data") and tool_result.data is not None:
+            content = serialize_content(tool_result.data)
+        elif hasattr(tool_result, "error") and tool_result.error is not None:
+            content = str(getattr(tool_result.error, "message", tool_result.error))
+        if not content:
+            content = serialize_content(tool_result)
+        meta = {}
+        if hasattr(tool_result, "meta") and isinstance(tool_result.meta, dict):
+            meta.update(tool_result.meta)
+        record_event("TOOL_RESULT", content, meta=meta)
+
+    def on_model_output(
+        self,
+        state: Optional[Any],
+        output: Any,
+        *,
+        record_payload: bool = False,
+        record_tool_output: bool = False,
+    ) -> None:
+        """模型输出事件钩子，仅用于运行时跟踪。"""
+        _ = state
+        _ = output
+        _ = record_payload
+        _ = record_tool_output
+
+    def on_error(self, state: Optional[Any], error: Exception) -> None:
+        """编排器错误事件钩子，仅用于运行时跟踪。"""
+        _ = state
+        _ = error
+
+    def on_run_end(self, state: Optional[Any], meta: Optional[Dict[str, Any]] = None) -> None:
+        """编排器运行结束事件钩子。"""
+        _ = state
+        _ = meta
+
     @contextmanager
     def span_scope(self, handle: AgentStepHandle):
         """Context manager for span lifecycle tied to an agent step handle."""
@@ -250,7 +354,9 @@ class RuntimeTracker:
             self._printer.end()
             self._printer = None
         if self._reporter is not None:
-            self._reporter.finalize()
+            refs = self._reporter.finalize()
+            for ref in refs:
+                self.record_artifact(ref, event_type="run_report")
             self._reporter.print_terminal_report()
 
     def initialize_reporter(
@@ -262,13 +368,21 @@ class RuntimeTracker:
         config: Any,
     ) -> RunReporter:
         """Create and start reporter."""
+        self.pipeline_slug = pipeline_slug
+        if experiment_id:
+            self.experiment_id = experiment_id
+            self.run_id = experiment_id
+        self._artifact_store = None
         if self._reporter is None:
+            artifact_store = self.get_run_artifact_store()
             self._reporter = RunReporter(
                 base_dir=base_dir,
                 pipeline_slug=pipeline_slug,
                 workflow_name=workflow_name,
                 experiment_id=experiment_id,
+                run_id=self.run_id,
                 console=self.console,
+                artifact_store=artifact_store,
             )
         self._reporter.start(config)
         return self._reporter
@@ -434,7 +548,7 @@ class RuntimeTracker:
 
         Example:
             with tracker.activate():
-                # Tools can now access this tracker
+                # tools can now access this tracker
                 result = await agent.run(...)
         """
         token = _current_runtime_tracker.set(self)

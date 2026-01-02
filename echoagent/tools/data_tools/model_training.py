@@ -11,7 +11,7 @@ from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
 from agents import function_tool
 from agents.run_context import RunContextWrapper
-from echoagent.context.data_store import DataStore
+from echoagent.utils.data_store import DataStore
 from .helpers import load_or_get_dataframe, cache_object
 from loguru import logger
 

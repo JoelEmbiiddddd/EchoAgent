@@ -10,6 +10,8 @@ from typing import Any, Optional
 from rich.console import Console
 
 from echoagent.artifacts.artifact_writer import ArtifactWriter
+from echoagent.artifacts.models import ArtifactRef
+from echoagent.artifacts.store import ArtifactStore
 from echoagent.artifacts.terminal_writer import TerminalWriter
 
 
@@ -50,15 +52,18 @@ class RunReporter:
         pipeline_slug: str,
         workflow_name: str,
         experiment_id: str,
+        run_id: str,
         console: Optional[Console] = None,
+        artifact_store: Optional[ArtifactStore] = None,
     ) -> None:
         self.base_dir = base_dir
         self.pipeline_slug = pipeline_slug
         self.workflow_name = workflow_name
         self.experiment_id = experiment_id
+        self.run_id = run_id
         self.console = console
 
-        self.run_dir = base_dir / pipeline_slug / experiment_id
+        self.run_dir = base_dir / "runs" / run_id
         self.terminal_md_path = self.run_dir / "terminal_log.md"
         self.terminal_html_path = self.run_dir / "terminal_log.html"
         self.final_report_md_path = self.run_dir / "final_report.md"
@@ -72,6 +77,8 @@ class RunReporter:
             pipeline_slug=pipeline_slug,
             workflow_name=workflow_name,
             experiment_id=experiment_id,
+            run_id=run_id,
+            artifact_store=artifact_store,
         )
         self._terminal_writer = TerminalWriter(
             run_dir=self.run_dir,
@@ -216,10 +223,10 @@ class RunReporter:
 
     # ------------------------------------------------------------- finalisation
 
-    def finalize(self) -> None:
+    def finalize(self) -> list[ArtifactRef]:
         """Persist markdown + HTML artefacts."""
         with self._lock:
-            self._artifact_writer.finalize()
+            return self._artifact_writer.finalize()
 
     # ---------------------------------------------------------- terminal flush
 

@@ -7,6 +7,8 @@ from typing import Any, Dict, Optional
 
 from agents.mcp import MCPServer, MCPServerSse, MCPServerStdio
 
+from echoagent.mcp.patches import apply_browsermcp_close_patch
+
 
 class MCPConfigurationError(ValueError):
     """Raised when an MCP server configuration is invalid."""
@@ -88,6 +90,11 @@ class MCPRegistry:
         """Register (or overwrite) a spec by name."""
         self._specs[name] = spec
 
+    def ensure_server(self, name: str, spec: MCPServerSpec) -> None:
+        """Register a spec only if the name is not already configured."""
+        if name not in self._specs:
+            self._specs[name] = spec
+
     def get(self, name: str) -> MCPServerSpec:
         try:
             return self._specs[name]
@@ -129,6 +136,12 @@ class MCPManagerSession:
         if name in self._servers:
             return self._servers[name]
 
+        if name == "browser":
+            try:
+                apply_browsermcp_close_patch()
+            except Exception:
+                pass
+
         spec = self._registry.get(name)
         options = dict(spec.options)
         if overrides:
@@ -161,8 +174,7 @@ class MCPManager:
 
     def ensure_server(self, name: str, spec: MCPServerSpec) -> None:
         """Add a default server if one isn't already configured."""
-        if not self._registry.contains(name):
-            self._registry.register(name, spec)
+        self._registry.ensure_server(name, spec)
 
     def session(self) -> MCPManagerSession:
         """Create a new MCPManagerSession for a pipeline run."""

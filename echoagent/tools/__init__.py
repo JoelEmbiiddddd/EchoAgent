@@ -1,4 +1,4 @@
-"""Tools for agent workflows."""
+"""tools for agent workflows."""
 
 # Re-export data tools for backward compatibility
 from .data_tools import (

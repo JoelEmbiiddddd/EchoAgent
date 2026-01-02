@@ -70,7 +70,7 @@ def _get_env_value(names: List[str]) -> Optional[str]:
     return None
 
 
-def _load_openai_env() -> Dict[str, str]:
+def _load_openai_env(*, set_openai_api_key: bool) -> Dict[str, str]:
     openai_url = _get_env_value(["OPENAI_URL", "openai_url"])
     api_key = _get_env_value(["OPENAI_API", "api"])
     model = _get_env_value(["OPENAI_MODEL", "model"])
@@ -88,6 +88,9 @@ def _load_openai_env() -> Dict[str, str]:
             "Missing required .env values: " + ", ".join(missing)
         )
 
+    if api_key and set_openai_api_key and not os.getenv("OPENAI_API_KEY"):
+        os.environ["OPENAI_API_KEY"] = api_key
+
     return {
         "provider": "openai",
         "base_url": openai_url,
@@ -98,8 +101,10 @@ def _load_openai_env() -> Dict[str, str]:
 
 def _apply_openai_env(raw: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(raw)
+    provider = out.get("provider") or "openai"
+    if provider not in ("openai", "openai_compatible"):
+        raise ValueError(f"Unsupported provider: {provider}")
     for key in (
-        "provider",
         "model",
         "api_key",
         "base_url",
@@ -108,7 +113,16 @@ def _apply_openai_env(raw: Dict[str, Any]) -> Dict[str, Any]:
         "aws_config",
     ):
         out.pop(key, None)
-    out.update(_load_openai_env())
+    env_payload = _load_openai_env(set_openai_api_key=False)
+    out.update(env_payload)
+    base_url = env_payload.get("base_url")
+    if provider == "openai" and base_url and "openai.com" not in str(base_url).lower():
+        provider = "openai_compatible"
+    if provider == "openai":
+        api_key = env_payload.get("api_key")
+        if api_key and not os.getenv("OPENAI_API_KEY"):
+            os.environ["OPENAI_API_KEY"] = api_key
+    out["provider"] = provider
     return out
 
 
@@ -279,8 +293,8 @@ def load_mapping_from_path(path: Union[str, Path]) -> Dict[str, Any]:
 
 def get_api_key_from_env(provider: str) -> str:
     """Auto-load OpenAI API key from environment."""
-    if provider != "openai":
-        raise ValueError("Only OpenAI provider is supported.")
+    if provider not in ("openai", "openai_compatible"):
+        raise ValueError("Only OpenAI providers are supported.")
 
     api_key = _get_env_value(["OPENAI_API", "api"])
     if not api_key:

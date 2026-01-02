@@ -1,3 +1,5 @@
+import uuid
+import warnings
 from typing import List, Set, Union
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
@@ -6,8 +8,8 @@ from .search import scrape_urls, ssl_context, ScrapeResult, WebpageSnippet
 from agents import function_tool
 
 
-@function_tool
-async def crawl_website(starting_url: str) -> Union[List[ScrapeResult], str]:
+async def crawl_site(starting_url: str) -> Union[List[ScrapeResult], str]:
+    # Source: echoagent/tools/web_tools/crawl.py:9-81 -> echoagent/tools/web_tools/crawl.py
     """Crawls the pages of a website starting with the starting_url and then descending into the pages linked from there.
     Prioritizes links found in headers/navigation, then body links, then subsequent pages.
     
@@ -107,3 +109,28 @@ async def crawl_website(starting_url: str) -> Union[List[ScrapeResult], str]:
     # Use scrape_urls to get the content for all discovered pages
     result = await scrape_urls(pages_to_scrape)
     return result
+
+
+@function_tool
+async def crawl_website(starting_url: str) -> Union[List[ScrapeResult], str]:
+    warnings.warn(
+        "crawl_website will migrate to ToolRegistry/ToolExecutor in a future release.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    try:
+        from echoagent.tools.executor import ToolExecutor
+        from echoagent.tools.models import ToolCall
+        call = ToolCall(
+            name="crawl_website",
+            args={"starting_url": starting_url},
+            call_id=uuid.uuid4().hex,
+        )
+        result = await ToolExecutor().execute(call)
+        if result.ok:
+            return result.data
+        if result.error and result.error.message:
+            return result.error.message
+        return "Error fetching page"
+    except Exception as e:
+        return f"Error fetching page: {str(e)}"

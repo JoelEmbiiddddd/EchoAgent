@@ -7,7 +7,7 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, LabelEncoder
 from agents import function_tool
 from agents.run_context import RunContextWrapper
-from echoagent.context.data_store import DataStore
+from echoagent.utils.data_store import DataStore
 from .helpers import load_or_get_dataframe
 from loguru import logger
 

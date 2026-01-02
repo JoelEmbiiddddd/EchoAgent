@@ -1,67 +1,52 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Union
+from typing import Any, Callable, Dict, Optional
 
-from pydantic import BaseModel
-
-from echoagent.context.conversation import BaseIterationRecord, ConversationState, create_conversation_state
-from echoagent.profiles.base import Profile, load_all_profiles
+from echoagent.context.state import (
+    BaseIterationRecord,
+    ConversationState,
+    identity_wrapper,
+)
 
 class Context:
     """Central coordinator for conversation state and iteration management."""
 
-    def __init__(
-        self,
-        components: Union[ConversationState, List[str]]
-    ) -> None:
-        """Initialize context with conversation state.
-
-        Args:
-            components: Either a ConversationState object (for backward compatibility)
-                       or a list of component names to automatically initialize:
-                       - "profiles": loads all profiles via load_all_profiles()
-                       - "states": creates conversation state via create_conversation_state()
-
-        Examples:
-            # Automatic initialization
-            context = Context(["profiles", "states"])
-
-            # Manual initialization (backward compatible)
-            state = create_conversation_state(profiles)
-            context = Context(state)
-        """
-        self.profiles: Optional[Dict[str, Profile]] = None
-        self.context_modules: Dict[str, BaseModel] = {}
-
-        if isinstance(components, ConversationState):
-            # Backward compatible: direct state initialization
-            self._state = components
-        elif isinstance(components, list):
-            # Automatic initialization from component list
-            if "profiles" in components:
-                self.profiles = load_all_profiles()
-
-            if "states" in components:
-                if self.profiles is None:
-                    raise ValueError("'states' requires 'profiles' to be initialized first. Include 'profiles' in the component list.")
-                self._state = create_conversation_state(self.profiles)
-            elif not hasattr(self, '_state'):
-                # If no state requested, create empty state
-                self._state = ConversationState()
-        else:
-            raise TypeError(f"components must be ConversationState or list, got {type(components)}")
+    def __init__(self, state: Optional[ConversationState] = None) -> None:
+        """Initialize context with conversation state."""
+        if state is not None and not isinstance(state, ConversationState):
+            raise TypeError(f"state must be ConversationState or None, got {type(state)}")
+        self._state = state or ConversationState()
+        self.modules: Dict[str, Any] = {}
+        self.context_modules = self.modules
 
     @property
     def state(self) -> ConversationState:
         return self._state
 
-    def register_context_module(self, name: str, module: BaseModel) -> None:
-        self.context_modules[name] = module
+    @property
+    def profiles(self) -> Optional[Dict[str, Any]]:
+        profiles = self.modules.get("profiles")
+        if profiles is None:
+            return None
+        return profiles
 
-    def get_context_module(self, name: str) -> BaseModel:
-        if name not in self.context_modules:
+    @profiles.setter
+    def profiles(self, value: Optional[Dict[str, Any]]) -> None:
+        if value is None:
+            self.modules.pop("profiles", None)
+        else:
+            self.modules["profiles"] = value
+
+    def register_context_module(self, name: str, module: Any) -> None:
+        self.modules[name] = module
+
+    def get_context_module(self, name: str) -> Any:
+        if name not in self.modules:
             raise ValueError(f"Context module {name} not found")
-        return self.context_modules[name]
+        return self.modules[name]
+
+    def get_with_wrapper(self, key: str, wrapper: Callable[[Any], Any] = identity_wrapper) -> Any:
+        return self._state.get_with_wrapper(key, wrapper)
 
     def begin_iteration(self) -> BaseIterationRecord:
         """Start a new iteration and return its record.

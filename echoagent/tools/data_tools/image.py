@@ -7,7 +7,7 @@ from io import BytesIO
 from pathlib import Path
 from agents import function_tool
 from agents.run_context import RunContextWrapper
-from echoagent.context.data_store import DataStore
+from echoagent.utils.data_store import DataStore
 from loguru import logger
 import google.generativeai as genai
 from PIL import Image
