@@ -8,6 +8,7 @@ data
 refactor
 .serena
 outputs/
+*.tar
 
 
 # Python cache
