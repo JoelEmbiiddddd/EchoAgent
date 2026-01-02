@@ -1,0 +1,45 @@
+# Data Science Workflow Configuration
+
+# Dataset defaults
+data:
+  path: "data/banana_quality.csv"
+  prompt: |
+    Build a model to classify banana quality as good or bad based on their numerical
+    information about bananas of different quality (size, weight, sweetness, softness,
+    harvest time, ripeness, and acidity). We have uploaded the entire dataset for you
+    here in the banana_quality.csv file.
+
+# Workflow settings
+pipeline:
+  max_iterations: 5
+  max_time_minutes: 10
+  verbose: true
+
+# Agent profiles
+agents:
+  memory_agent:
+    profile: memory_agent
+  routing_agent:
+    profile: routing_agent
+  observe_agent:
+    profile: observe_agent
+  writer_agent:
+    profile: writer_agent
+  evaluate_agent:
+    profile: evaluate_agent
+
+  tool_agents:
+    data_loader_agent:
+      profile: data_loader_agent
+    data_analysis_agent:
+      profile: data_analysis_agent
+    preprocessing_agent:
+      profile: preprocessing_agent
+    model_training_agent:
+      profile: model_training_agent
+    evaluation_agent:
+      profile: evaluation_agent
+    visualization_agent:
+      profile: visualization_agent
+    code_generation_agent:
+      profile: code_generation_agent

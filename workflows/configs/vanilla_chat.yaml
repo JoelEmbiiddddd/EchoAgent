@@ -1,0 +1,15 @@
+# Vanilla Chat Workflow Configuration - Simple conversational agent
+
+# Default prompt
+data:
+  prompt: |
+    Hello! How are you?
+
+# Workflow settings
+pipeline:
+  verbose: true
+
+# Agent profiles
+agents:
+  vanilla_chat_agent:
+    profile: vanilla_chat
