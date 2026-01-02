@@ -74,15 +74,8 @@ EchoAgent/
 ├── workflows/                 # Opinionated workflows
 ├── examples/                  # Runnable examples
 ├── frontend/                  # Lightweight workflow UI
-├── openspec/                  # Architecture & refactor specs
 ├── outputs/                   # Run artifacts
 └── tests/
-
-````
-
-> 📌 Start with `openspec/` if you want to understand the architectural intent.
-
----
 
 ## 🚀 Getting Started
 
@@ -275,10 +268,9 @@ Contributions are welcome.
 
 Suggested workflow:
 
-1. Read `openspec/` to understand design intent
-2. Modify one runtime boundary at a time
-3. Add or update a workflow as validation
-4. Submit focused PRs with context
+1. Modify one runtime boundary at a time
+2. Add or update a workflow as validation
+3. Submit focused PRs with context
 
 Architecture discussions are encouraged.
 
