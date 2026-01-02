@@ -1,169 +1,177 @@
-
 # EchoAgent
 
-> 🧠 **Context-first Agent Runtime** for building inspectable, iterative, and skill-driven AI workflows.
+> 🧠 **Context-First Agent Runtime for Building Inspectable AI Systems**
 
-EchoAgent is an engineering-oriented Agent framework that treats **context as a first-class runtime artifact**.  
-Instead of opaque prompt chains, EchoAgent structures agent execution into **explicit phases**, backed by a unified context store, a protocolized Skill system, and built-in observability.
+EchoAgent is an **engineering-oriented agent framework** that treats **context as a first-class runtime artifact**.
+Instead of hiding reasoning inside opaque prompt chains, EchoAgent exposes execution as a **structured, observable, and reproducible process**.
 
-EchoAgent is designed for developers who want to **understand, debug, evolve, and trust** their agents.
+It is designed for developers who want to **understand, debug, and evolve** intelligent agents — not just run them.
 
 ---
 
-## ✨ Key Features
+## ✨ Why EchoAgent?
 
-- 🧠 **Context-Centered Design**  
-  Unified context system as the single source of truth across iterations.
+Most agent frameworks focus on *getting something to work*.
 
-- 🏗 **Explicit Agent Runtime**  
-  Clear separation between instruction building, execution, parsing, and tracking.
+EchoAgent focuses on **making it understandable, controllable, and evolvable**.
 
-- 🧩 **Protocolized Skills**  
-  Skills are declarative documents, not ad-hoc functions.
+| Traditional Agents | EchoAgent             |
+| ------------------ | --------------------- |
+| Prompt-centric     | Context-centric       |
+| Implicit state     | Explicit state        |
+| Hard to debug      | Fully observable      |
+| Ad-hoc tools       | Protocolized skills   |
+| One-off flows      | Reproducible runtimes |
 
-- 📊 **Observability First**  
-  Structured events, grouped logs, artifacts, and error surfacing.
+---
 
-- 🔌 **Extensible Integration**  
-  Tool system, MCP runtime scaffolding, and provider abstraction.
+## 🚀 Quick Start
 
-- 🧪 **Engineering-First**  
-  Designed for refactoring, replay, testing, and long-term evolution.
+### 1️⃣ Install
+
+```bash
+git clone https://github.com/JoelEmbiiddddd/EchoAgent.git
+cd EchoAgent
+cp .env.example .env
+```
+
+### 2️⃣ Configure
+
+```env
+OPENAI_API_KEY=your_key
+OPENAI_MODEL=gpt-4.1
+```
+
+### 3️⃣ Run a workflow
+
+```bash
+python examples/web_researcher.py
+```
+
+You will see:
+
+* structured logs
+* step-by-step execution
+* artifacts generated under `outputs/`
+
+> 💡 Tip: Every run is inspectable and replayable.
+
+---
+
+## 🧠 Core Idea
+
+EchoAgent treats an agent run as a **runtime system**, not a prompt.
+
+At its core:
+
+> **Context is the source of truth.**
+> All execution reads from it and writes back to it.
+
+This makes behavior:
+
+* inspectable
+* debuggable
+* reproducible
+* extensible
 
 ---
 
 ## 🏗 Architecture Overview
 
-EchoAgent follows a **layered, runtime-oriented architecture**:
+```mermaid
+flowchart TD
+  %% =========================
+  %% EchoAgent: Context-first Runtime
+  %% =========================
 
+  U[User / Workflow] --> W[Workflow Runner<br/>workflows/*]
+
+  subgraph R["Runtime Core (echoagent/)"]
+    direction TB
+
+    C[(Context Store<br/>echoagent/context)]
+    IB[Instruction Builder<br/>echoagent/agent/prompting]
+    EX[Executor<br/>echoagent/agent/executor.py]
+    OH[Output Handler<br/>echoagent/agent/output_handler.py]
+    TR[Tracker / Observability<br/>echoagent/agent/tracker.py]
+
+    C --> IB --> EX --> OH --> TR
+    TR -->|writes| C
+  end
+
+  W --> C
+
+  subgraph E["Execution Surface"]
+    direction LR
+    LLM[LLM Provider<br/>echoagent/llm/*]
+    TOOLS[Tool Runtime<br/>echoagent/tools]
+    SKILLS[Skill System<br/>echoagent/skills]
+  end
+
+  EX -->|model call| LLM
+  EX -->|tool call| TOOLS
+  EX -->|skill activation| SKILLS
+
+  subgraph O["Artifacts & Outputs"]
+    direction TB
+    LOGS[Structured Logs]
+    EVENTS[Runtime Events]
+    ARTS[Run Artifacts<br/>outputs/*]
+  end
+
+  TR --> LOGS
+  TR --> EVENTS
+  TR --> ARTS
 ```
-
-User / Workflow
-↓
-Context (Blackboard)
-↓
-Instruction Builder
-↓
-Executor (LLM / Tool / Skill)
-↓
-Output Handler
-↓
-Tracker → Logs / Events / Artifacts
-
-```
-
-**Design principle**
-
-> *Context is explicit. Execution is observable. Behavior is reproducible.*
 
 ---
 
-## 📦 Repository Layout
+## 🧩 Core Concepts
 
-```
+### Context
 
-EchoAgent/
-├── echoagent/                 # Core library
-│   ├── agent/                 # Agent runtime & orchestration
-│   ├── context/               # Context system (state + blocks)
-│   ├── tools/                 # Tool registry & executor
-│   ├── skills/                # Skill specs, registry, router
-│   ├── llm/                   # Model provider abstraction
-│   └── mcp/                   # MCP runtime integration
-│
-├── workflows/                 # Opinionated workflows
-├── examples/                  # Runnable examples
-├── frontend/                  # Lightweight workflow UI
-├── outputs/                   # Run artifacts
-└── tests/
-
-## 🚀 Getting Started
-
-### 1️⃣ Clone
-
-```bash
-git clone https://github.com/JoelEmbiiddddd/EchoAgent.git
-cd EchoAgent
-````
-
-### 2️⃣ Environment
-
-```bash
-cp .env.example .env
-```
-
-Required:
-
-* `OPENAI_API`
-* `OPENAI_URL`
-* `OPENAI_MODEL`
-
-Optional:
-
-* `SERPER_API_KEY`
-* `SEARCH_PROVIDER=serper | searchxng`
-
----
-
-## 🧠 Core Concepts
-
-### 🧠 Context
-
-Context is the **shared memory and state store** for the entire agent run:
+Context is the shared, mutable state of a run:
 
 * conversation history
-* intermediate reasoning outputs
+* intermediate reasoning
 * tool / skill results
-* errors and metadata
+* errors & metadata
 
-All agent steps **read from and write to Context**, making state transitions explicit and inspectable.
+All runtime stages **read from and write to Context**.
 
 ---
 
-### 🧩 Agent Runtime
+### Agent Runtime
 
 An EchoAgent run is a **phased pipeline**:
 
-1. Instruction building (context blocks + policy)
-2. Execution (model / tool / skill)
-3. Output handling (tolerant parsing & validation)
-4. Tracking (events, logs, artifacts)
-5. Iteration control (stop conditions, limits)
+1. Instruction building
+2. Execution (LLM / Tool / Skill)
+3. Output parsing & validation
+4. Tracking & artifact generation
+5. Iteration control
 
-Agents are **runtime systems**, not just prompts.
+Each phase is explicit and observable.
 
 ---
 
-### 🔌 Tools vs Skills
+### Tools vs Skills
 
-| Concept | Purpose              | Characteristics                     |
-| ------- | -------------------- | ----------------------------------- |
-| Tool    | Low-level capability | Stateless, direct execution         |
-| Skill   | Agent-level ability  | Declarative, contextual, observable |
+| Concept | Purpose              | Properties                        |
+| ------- | -------------------- | --------------------------------- |
+| Tool    | Low-level capability | Stateless, direct execution       |
+| Skill   | Agent behavior       | Declarative, contextual, governed |
 
-Skills may:
+Skills can:
 
-* restrict tool access
+* restrict tool usage
 * override models
 * disable LLM calls
-* encapsulate reusable behaviors
+* encapsulate reusable logic
 
 ---
 
-## 🔍 Architecture Deep Dive
-
-### 🧩 Agent Layer (`echoagent/agent/`)
-
-* **executor.py** – provider calls & runtime config
-* **output_handler.py** – tolerant parsing & schema validation
-* **tracker.py** – events, groups, logs, artifacts
-* **prompting/** – instruction assembly & context rendering
-
----
-
-### 🔌 Skill System (`echoagent/skills/`)
-
-Skills are **Markdown documents with YAML frontmatter**.
+## 🧩 Skill Definition (Example)
 
 ```markdown
 ---
@@ -178,86 +186,67 @@ model_override: gpt-4.1
 You are a research assistant...
 ```
 
-This enables:
-
-* skill discovery
-* routing & activation
-* capability boundaries
-* future compatibility with external catalogs
+Skills are **documents**, not functions — enabling discovery, routing, and governance.
 
 ---
 
-### 📊 Observability
+## 🔍 Observability & Debugging
 
 EchoAgent records:
 
 * structured runtime events
-* grouped logs (iteration / phase)
+* grouped logs by phase
 * explicit error blocks
-* persistent run artifacts
+* persistent artifacts
 
 This enables:
 
-* replay
-* debugging
-* UI visualization
+* replay & inspection
 * regression testing
+* UI visualization
+* behavior comparison
 
 ---
 
-## 🧪 Examples & Workflows
+## 📦 Repository Structure
 
-Run a workflow:
-
-```bash
-python examples/web_researcher.py
+```
+EchoAgent/
+├── echoagent/
+│   ├── agent/        # runtime orchestration
+│   ├── context/      # shared state & blocks
+│   ├── tools/        # tool registry & execution
+│   ├── skills/       # skill definitions
+│   ├── llm/          # model providers
+│   └── mcp/          # MCP integration
+│
+├── workflows/        # opinionated pipelines
+├── examples/         # runnable demos
+├── frontend/         # optional UI
+├── outputs/          # runtime artifacts (gitignored)
+└── tests/
 ```
 
-Available workflows:
-
-* Web research
-* Data science
-* Vanilla chat
-* Skill-driven agent
-
-Workflows act as **integration surfaces** for the runtime.
-
 ---
 
-## ⚙️ Configuration System
+## 🧭 Roadmap
 
-Workflows accept:
+### Near-term
 
-* YAML / JSON paths
-* dictionaries
-* patch-based overrides
+* Improved skill routing
+* Iteration-aware frontend
+* Run replay tooling
 
-This allows:
+### Mid-term
 
-* reproducible runs
-* environment-specific configs
-* clean separation of logic and policy
-
----
-
-## 🧭 Roadmap (High-Level)
-
-### 🟢 Near-term
-
-* Skill routing & discovery improvements
-* Iteration-aware frontend UI
-* Run replay & artifact inspection
-
-### 🟡 Mid-term
-
+* Multi-agent orchestration
 * Capability sandboxing
-* Multi-agent orchestration patterns
 * Structured telemetry export
 
-### 🔵 Long-term
+### Long-term
 
-* Standardized Skill protocol compatibility
-* Pluggable memory systems
+* Standardized skill protocols
+* Pluggable memory backends
 * Production hardening
 
 ---
@@ -266,16 +255,15 @@ This allows:
 
 Contributions are welcome.
 
-Suggested workflow:
+Guidelines:
 
-1. Modify one runtime boundary at a time
+1. Change one runtime boundary at a time
 2. Add or update a workflow as validation
-3. Submit focused PRs with context
-
-Architecture discussions are encouraged.
+3. Keep behavior observable
 
 ---
 
 ## 📄 License
 
-This project is provided under the repository’s license terms.
+Provided under the repository license.
+
