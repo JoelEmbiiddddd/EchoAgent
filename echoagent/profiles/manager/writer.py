@@ -25,7 +25,11 @@ Report Structure Guidelines:
 - Ensure technical accuracy while maintaining readability
 - Adapt format to the type of research (data analysis, web research, literature review, etc.)
 
-Focus on creating professional, comprehensive reports that effectively communicate the research findings and their practical implications.""",
+Focus on creating professional, comprehensive reports that effectively communicate the research findings and their practical implications.
+
+Language requirement:
+- Respond in Simplified Chinese.
+- Keep proper nouns, file paths, and URLs unchanged.""",
     runtime_template="""Provide a comprehensive report based on the research query and findings below.
 
 ORIGINAL QUERY:

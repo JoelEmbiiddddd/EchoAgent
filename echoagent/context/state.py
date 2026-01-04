@@ -13,6 +13,16 @@ def identity_wrapper(value: Any) -> Any:
     return value
 
 
+class IterationDigest(BaseModel):
+    """单轮摘要结构。"""
+
+    summary: str = ""
+    facts: List[str] = Field(default_factory=list)
+    decisions: List[str] = Field(default_factory=list)
+    open_questions: List[str] = Field(default_factory=list)
+    action_items: List[str] = Field(default_factory=list)
+
+
 class BaseIterationRecord(BaseModel):
     """State captured for a single iteration of the research loop."""
 
@@ -21,6 +31,7 @@ class BaseIterationRecord(BaseModel):
     tools: List[ToolAgentOutput] = Field(default_factory=list)
     payloads: List[Any] = Field(default_factory=list)
     status: str = Field(default="pending", description="Iteration status: pending or complete")
+    digest: Optional[IterationDigest] = None
     summarized: bool = Field(default=False, description="Whether this iteration has been summarised")
 
     def mark_complete(self) -> None:
@@ -30,6 +41,10 @@ class BaseIterationRecord(BaseModel):
         return self.status == "complete"
 
     def mark_summarized(self) -> None:
+        self.summarized = True
+
+    def set_digest(self, digest: IterationDigest) -> None:
+        self.digest = digest
         self.summarized = True
 
     def add_payload(self, value: Any) -> Any:

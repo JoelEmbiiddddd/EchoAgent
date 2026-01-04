@@ -12,7 +12,6 @@ from echoagent.artifacts.models import ArtifactKind, ArtifactRef, ArtifactSettin
 
 
 ENV_ARTIFACTS_DIR = "ECHOAGENT_ARTIFACTS_DIR"
-DEFAULT_ARTIFACTS_DIR = Path.cwd() / ".echoagent" / "artifacts"
 
 
 class ArtifactStore(Protocol):
@@ -54,7 +53,7 @@ def resolve_artifacts_root(
     if not root_dir:
         root_dir = os.getenv(ENV_ARTIFACTS_DIR)
     if not root_dir:
-        return DEFAULT_ARTIFACTS_DIR
+        raise ValueError("artifacts.root_dir is required")
     return Path(root_dir)
 
 
@@ -72,7 +71,7 @@ def resolve_run_artifacts_root(
 
 class FileSystemArtifactStore:
     def __init__(self, root_dir: Path | str) -> None:
-        self.root_dir = Path(root_dir)
+        self.root_dir = Path(root_dir).resolve()
 
     def put_bytes(
         self,
@@ -81,8 +80,7 @@ class FileSystemArtifactStore:
         meta: Optional[dict[str, Any]] = None,
     ) -> ArtifactRef:
         artifact_id = str(uuid.uuid4())
-        safe_name = _safe_name(name)
-        path = self._artifact_path(artifact_id, safe_name)
+        path = self._artifact_path(artifact_id, name)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
 
@@ -114,16 +112,26 @@ class FileSystemArtifactStore:
     def resolve(self, ref: ArtifactRef) -> Path:
         return Path(ref.uri)
 
-    def _artifact_path(self, artifact_id: str, safe_name: str) -> Path:
-        return self.root_dir / artifact_id / safe_name
+    def _artifact_path(self, artifact_id: str, name: str) -> Path:
+        safe_path = _safe_relative_path(name)
+        if len(safe_path.parts) > 1:
+            return self.root_dir / safe_path
+        return self.root_dir / artifact_id / safe_path
 
 
-def _safe_name(name: str) -> str:
-    cleaned = Path(name).name
-    cleaned = re.sub(r"[^A-Za-z0-9._-]", "_", cleaned)
-    if not cleaned:
-        cleaned = "artifact"
-    return cleaned
+def _safe_relative_path(name: str) -> Path:
+    raw_path = Path(name)
+    parts = []
+    for part in raw_path.parts:
+        if part in ("", ".", ".."):
+            continue
+        cleaned = re.sub(r"[^A-Za-z0-9._-]", "_", part)
+        if not cleaned:
+            cleaned = "artifact"
+        parts.append(cleaned)
+    if not parts:
+        return Path("artifact")
+    return Path(*parts)
 
 
 def _merge_meta(meta: Optional[dict[str, Any]], data: bytes) -> dict[str, Any]:

@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "echoagent"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = [
+  "pydantic>=2",
+  "pyyaml",
+  "python-dotenv",
+  "loguru",
+  "rich",
+  "requests",
+  "aiohttp",
+  "beautifulsoup4",
+  "markdown",
+  "pygments",
+  "openai-agents",
+  "numpy",
+  "pandas",
+  "seaborn",
+  "scikit-learn",
+
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+data = ["numpy", "pandas", "matplotlib", "seaborn", "scikit-learn", "pillow"]
+media = ["google-generativeai"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["echoagent*", "workflows*"]
+exclude = [
+  "outputs*",
+  "skills*",
+  "frontend*",
+  "code_docs*",
+  "tests*",
+]

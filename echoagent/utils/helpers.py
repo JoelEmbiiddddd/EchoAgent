@@ -74,7 +74,24 @@ def parse_to_model(
     elif isinstance(raw_output, (dict, list)):
         output = model_class.model_validate(raw_output)
     elif isinstance(raw_output, (str, bytes, bytearray)):
-        output = model_class.model_validate_json(raw_output)
+        text = _normalize_text(raw_output)
+        try:
+            output = model_class.model_validate_json(text)
+        except Exception:
+            parsed = _try_parse_json(text)
+            if parsed is None:
+                fallback = _coerce_output_model(text, model_class)
+                if fallback is None:
+                    raise
+                output = model_class.model_validate(fallback)
+            else:
+                try:
+                    output = model_class.model_validate(parsed)
+                except Exception:
+                    fallback = _coerce_output_model(parsed, model_class)
+                    if fallback is None:
+                        raise
+                    output = model_class.model_validate(fallback)
     else:
         output = model_class.model_validate(raw_output)
 
@@ -82,3 +99,41 @@ def parse_to_model(
         span.set_output(output.model_dump())
 
     return output
+
+
+def _normalize_text(raw_output: Any) -> str:
+    if isinstance(raw_output, (bytes, bytearray)):
+        return raw_output.decode("utf-8", errors="ignore")
+    return str(raw_output)
+
+
+def _try_parse_json(text: str) -> Optional[Any]:
+    if not text:
+        return None
+    decoder = json.JSONDecoder()
+    stripped = text.strip()
+    try:
+        return decoder.raw_decode(stripped)[0]
+    except Exception:
+        pass
+    candidates = [stripped.find("{"), stripped.find("[")]
+    for start in candidates:
+        if start == -1:
+            continue
+        try:
+            return decoder.raw_decode(stripped[start:])[0]
+        except Exception:
+            continue
+    return None
+
+
+def _coerce_output_model(value: Any, model_class: type[BaseModel]) -> Optional[dict[str, Any]]:
+    fields = getattr(model_class, "model_fields", None)
+    if not isinstance(fields, dict):
+        return None
+    if "output" not in fields:
+        return None
+    payload: dict[str, Any] = {"output": _normalize_text(value)}
+    if "sources" in fields:
+        payload["sources"] = []
+    return payload

@@ -9,7 +9,8 @@ from pydantic import BaseModel
 from echoagent.agent import EchoAgent
 from echoagent.context import Context
 from echoagent.profiles.web.web_planning import AgentSelectionPlan
-from echoagent.utils.parsers import parse_json_output
+from echoagent.observability.runlog.utils import truncate_text
+from echoagent.utils.parsers import OutputParserError, parse_json_output
 from workflows.base import BaseWorkflow, autotracing
 
 
@@ -72,7 +73,12 @@ class WebSearcherWorkflow(BaseWorkflow):
                 return AgentSelectionPlan.model_validate(parse_json_output(output))
             return AgentSelectionPlan.model_validate(output)
         except Exception as exc:
-            raise ValueError("Planning agent output must be valid JSON with tasks.") from exc
+            message = "Planning agent output must be valid JSON with tasks."
+            preview = truncate_text(str(output), 2000)
+            self.runtime_tracker.log_panel("Plan Parse Error", f"{message}\n{preview}")
+            if isinstance(exc, OutputParserError):
+                return AgentSelectionPlan(tasks=[], reasoning="parse_failed")
+            return AgentSelectionPlan(tasks=[], reasoning="parse_failed")
 
     @autotracing()
     async def run(self, query: Any = None) -> Any:

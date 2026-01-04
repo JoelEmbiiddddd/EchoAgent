@@ -29,7 +29,11 @@ Evaluate the research state and provide structured output with:
 - reasoning: clear explanation of your evaluation
 
 Only output JSON. Follow the JSON schema below. Do not output anything else:
-{EvaluateOutput.model_json_schema()}""",
+{EvaluateOutput.model_json_schema()}
+
+Language requirement:
+- JSON string fields must be in Simplified Chinese.
+- Keep proper nouns, file paths, and URLs unchanged.""",
     runtime_template="""Current Iteration Number: {iteration}
 Time Elapsed: {elapsed_minutes} minutes of maximum {max_time_minutes} minutes
 

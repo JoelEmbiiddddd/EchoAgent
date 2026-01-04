@@ -158,13 +158,15 @@ def record_parse_failure(
     handler_name: str,
     error_detail: Optional[dict[str, Any]] = None,
     meta: Optional[dict[str, Any]] = None,
+    path_prefix: Optional[str] = None,
 ) -> ArtifactRef:
     effective_run_id = run_id or uuid.uuid4().hex
     schema_label = _safe_token(schema_name or "unknown")
     name_suffix = effective_run_id
+    prefix = f"{path_prefix.strip().strip('/')}/" if path_prefix else ""
     raw_text = serialize_content(raw_output)
     raw_ref = save_text(
-        f"parse_failure_raw_{schema_label}_{name_suffix}.txt",
+        f"{prefix}parse_failure_raw_{schema_label}_{name_suffix}.txt",
         raw_text,
         store=store,
         meta={
@@ -183,7 +185,7 @@ def record_parse_failure(
         "error_type": error_type,
         "error_message": error_message,
         "traceback": traceback_text,
-        "raw_text_path": raw_ref.uri,
+        "raw_text_path": raw_ref.path or raw_ref.uri,
         "meta": {
             "handler": handler_name,
             "raw_model_output": raw_text,
@@ -194,7 +196,7 @@ def record_parse_failure(
     if meta:
         payload["meta"].update(meta)
     return save_json(
-        f"parse_failure_{schema_label}_{name_suffix}.json",
+        f"{prefix}parse_failure_{schema_label}_{name_suffix}.json",
         payload,
         store=store,
         meta={

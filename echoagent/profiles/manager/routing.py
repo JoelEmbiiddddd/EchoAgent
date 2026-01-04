@@ -59,7 +59,12 @@ Example:
 
 IMPORTANT: Actively search the ORIGINAL QUERY section below for file paths, URLs, and identifiers, and include them explicitly in your task queries.
 
-Create a routing plan with EXACTLY ONE agent and ONE task to address the most immediate knowledge gap.""",
+Create a routing plan with EXACTLY ONE agent and ONE task to address the most immediate knowledge gap.
+
+Language requirement:
+- JSON string fields must be in Simplified Chinese.
+- The "agent" field must remain the exact agent identifier.
+- URLs and file paths must remain unchanged.""",
     runtime_template="""
 AVAILABLE AGENTS:
 {available_agents_text}

@@ -3,7 +3,7 @@ Output parsing utilities for JSON and structured data extraction.
 """
 
 import json
-from typing import Any, Callable, List
+from typing import Any, Callable, List, Optional
 
 from pydantic import BaseModel
 
@@ -101,38 +101,35 @@ def parse_json_output(output: str) -> Any:
                 parsed_output = parsed_output[4:].lstrip()
             else:
                 parsed_output = parsed_output.lstrip()
+            parsed = _try_decode_json(parsed_output)
+            if parsed is not None:
+                return parsed
             try:
-                return json.loads(parsed_output)
+                return json.loads(_escape_unescaped_quotes(parsed_output))
             except json.JSONDecodeError:
-                # Try escaping unescaped quotes
-                try:
-                    return json.loads(_escape_unescaped_quotes(parsed_output))
-                except json.JSONDecodeError:
-                    pass
+                pass
         elif len(parts) == 2:
             # Edge case: only one code block marker pair
             parsed_output = parts[1].strip()
             if parsed_output.startswith("json") or parsed_output.startswith("JSON"):
                 parsed_output = parsed_output[4:].lstrip()
-            try:
-                return json.loads(parsed_output)
-            except json.JSONDecodeError:
-                try:
-                    return json.loads(_escape_unescaped_quotes(parsed_output))
-                except json.JSONDecodeError:
-                    pass
-
-    # As a last attempt, try to manually find the JSON object in the output and parse it
-    parsed_output = find_json_in_string(output)
-    if parsed_output:
-        try:
-            return json.loads(parsed_output)
-        except json.JSONDecodeError:
-            # Try escaping unescaped quotes
+            parsed = _try_decode_json(parsed_output)
+            if parsed is not None:
+                return parsed
             try:
                 return json.loads(_escape_unescaped_quotes(parsed_output))
             except json.JSONDecodeError:
                 pass
+
+    # As a last attempt, try to manually find the JSON object in the output and parse it
+    parsed = _try_decode_json(output)
+    if parsed is not None:
+        return parsed
+    parsed_output = find_json_in_string(output)
+    if parsed_output:
+        parsed = _try_decode_json(parsed_output)
+        if parsed is not None:
+            return parsed
 
     # If all fails, raise an error
     raise OutputParserError("Failed to parse output as JSON", output)
@@ -143,7 +140,52 @@ def create_type_parser(type: BaseModel) -> Callable[[str], BaseModel]:
 
     def convert_json_string_to_type(output: str) -> BaseModel:
         """Take a string output and parse it as a Pydantic model"""
-        output_dict = parse_json_output(output)
+        try:
+            output_dict = parse_json_output(output)
+        except OutputParserError:
+            fallback = _coerce_output_payload(output, type)
+            if fallback is None:
+                raise
+            return type.model_validate(fallback)
+        if not isinstance(output_dict, dict):
+            fallback = _coerce_output_payload(output_dict, type)
+            if fallback is not None:
+                return type.model_validate(fallback)
         return type.model_validate(output_dict)
 
     return convert_json_string_to_type
+
+
+def _coerce_output_payload(value: Any, model_class: type[BaseModel]) -> Optional[dict[str, Any]]:
+    fields = getattr(model_class, "model_fields", None)
+    if not isinstance(fields, dict):
+        return None
+    if "output" not in fields:
+        return None
+    if isinstance(value, (dict, list)):
+        output_text = json.dumps(value, ensure_ascii=False)
+    else:
+        output_text = str(value)
+    payload: dict[str, Any] = {"output": output_text}
+    if "sources" in fields:
+        payload["sources"] = []
+    return payload
+
+
+def _try_decode_json(text: str) -> Optional[Any]:
+    if not text:
+        return None
+    decoder = json.JSONDecoder()
+    cleaned = text.strip()
+    try:
+        return decoder.raw_decode(cleaned)[0]
+    except json.JSONDecodeError:
+        pass
+    for start in (cleaned.find("{"), cleaned.find("[")):
+        if start == -1:
+            continue
+        try:
+            return decoder.raw_decode(cleaned[start:])[0]
+        except json.JSONDecodeError:
+            continue
+    return None

@@ -31,22 +31,59 @@ def render_iteration_block(iteration: BaseIterationRecord) -> str:
     return "\n\n".join(lines).strip()
 
 
+def render_iteration_digest_block(iteration: BaseIterationRecord) -> str:
+    digest = iteration.digest
+    if digest is None:
+        return render_iteration_block(iteration)
+
+    lines: list[str] = [f"[ITERATION {iteration.index}]", "<digest>"]
+    lines.append(f"summary: {digest.summary}")
+    lines.extend(_render_digest_list("facts", digest.facts))
+    lines.extend(_render_digest_list("decisions", digest.decisions))
+    lines.extend(_render_digest_list("open_questions", digest.open_questions))
+    lines.extend(_render_digest_list("action_items", digest.action_items))
+    lines.append("</digest>")
+    return "\n".join(lines).strip()
+
+
+def _render_digest_list(label: str, items: list[str]) -> list[str]:
+    if not items:
+        return [f"{label}: []"]
+    lines = [f"{label}:"]
+    lines.extend(f"- {item}" for item in items)
+    return lines
+
+
 def render_iteration_history(
     iterations: Iterable[BaseIterationRecord],
     *,
     include_current: bool,
     only_unsummarized: bool = False,
     current_iteration: Optional[BaseIterationRecord] = None,
+    raw_keep_last: int = 2,
 ) -> str:
     blocks: list[str] = []
+    candidates: list[tuple[BaseIterationRecord, bool]] = []
     for iteration in iterations:
         is_current = current_iteration is not None and iteration is current_iteration
         if iteration.is_complete() or (include_current and is_current):
             if only_unsummarized and iteration.summarized:
                 continue
+            candidates.append((iteration, is_current))
+
+    completed = [item for item, _ in candidates if item.is_complete()]
+    raw_tail = completed[-raw_keep_last:] if raw_keep_last > 0 else []
+    raw_ids = {id(item) for item in raw_tail}
+
+    for iteration, is_current in candidates:
+        if is_current and not iteration.is_complete():
             block = render_iteration_block(iteration)
-            if block:
-                blocks.append(block)
+        elif id(iteration) in raw_ids:
+            block = render_iteration_block(iteration)
+        else:
+            block = render_iteration_digest_block(iteration)
+        if block:
+            blocks.append(block)
     return "\n\n".join(blocks).strip()
 
 

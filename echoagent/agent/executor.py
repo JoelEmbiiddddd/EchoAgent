@@ -152,6 +152,8 @@ def _save_parse_failure_snapshot(
     settings = getattr(tracker, "artifact_settings", None)
     if not settings or not getattr(settings, "enabled", False):
         return
+    if not getattr(settings, "debug_enabled", False):
+        return
     if not getattr(settings, "save_parse_failures", False):
         return
     store_getter = getattr(tracker, "get_run_artifact_store", None)
@@ -194,6 +196,7 @@ def _save_parse_failure_snapshot(
         traceback_text=traceback_text,
         handler_name="OutputHandler",
         error_detail=error_payload,
+        path_prefix="debug",
     )
     record = getattr(tracker, "record_artifact", None)
     if callable(record):

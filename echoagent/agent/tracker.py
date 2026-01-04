@@ -7,6 +7,7 @@ import logging
 import os
 from pathlib import Path
 import time
+import traceback
 import uuid
 from typing import Any, Dict, Optional
 
@@ -21,6 +22,8 @@ from echoagent.artifacts.store import (
     FileSystemArtifactStore,
     resolve_run_artifacts_root,
 )
+from echoagent.observability.runlog import RunEventWriter, RunIndexBuilder, RunLog
+from echoagent.observability.runlog.utils import truncate_text
 
 # Context variable to store the current runtime tracker
 # This allows tools to access the tracker without explicit parameter passing
@@ -137,6 +140,11 @@ class RuntimeTracker:
         self._artifact_settings = artifact_settings or ArtifactSettings()
         self._artifact_store: Optional[ArtifactStore] = None
         self._artifact_records: list[dict[str, Any]] = []
+        self._runlog: Optional[RunLog] = None
+        self._run_dir: Optional[Path] = None
+        self._run_dir_relative: Optional[str] = None
+        self._outputs_dir: Optional[Path] = None
+        self._tool_calls: Dict[str, str] = {}
 
     @property
     def printer(self) -> Optional[Printer]:
@@ -156,6 +164,16 @@ class RuntimeTracker:
     def artifact_records(self) -> list[dict[str, Any]]:
         return list(self._artifact_records)
 
+    @property
+    def run_dir(self) -> Optional[Path]:
+        """返回当前 run 目录（若 runlog 已启用）。"""
+        return self._run_dir
+
+    @property
+    def run_dir_relative(self) -> Optional[str]:
+        """返回相对 outputs 的 run 目录路径。"""
+        return self._run_dir_relative
+
     def configure_artifacts(self, settings: ArtifactSettings) -> None:
         self._artifact_settings = settings
         self._artifact_store = None
@@ -164,6 +182,8 @@ class RuntimeTracker:
         return self._artifact_settings.enabled
 
     def get_run_artifact_root(self) -> Path:
+        if self._run_dir is not None:
+            return self._run_dir
         return resolve_run_artifacts_root(self.run_id, settings=self._artifact_settings)
 
     def get_run_artifact_store(self) -> Optional[ArtifactStore]:
@@ -173,13 +193,88 @@ class RuntimeTracker:
             self._artifact_store = FileSystemArtifactStore(self.get_run_artifact_root())
         return self._artifact_store
 
+    def _ensure_run_dir(self, outputs_dir: Path) -> Path:
+        run_dir = Path(outputs_dir) / "runs" / str(self.run_id)
+        for subdir in ("reports", "debug", "runlog", "snapshots"):
+            (run_dir / subdir).mkdir(parents=True, exist_ok=True)
+        self._run_dir = run_dir
+        self._run_dir_relative = str(Path("runs") / str(self.run_id))
+        self._outputs_dir = Path(outputs_dir)
+        outputs_root = str(self._outputs_dir)
+        if self._artifact_settings.root_dir != outputs_root:
+            self._artifact_settings.root_dir = outputs_root
+            self._artifact_store = None
+        return run_dir
+
+    def start_runlog(self, *, outputs_dir: Path) -> None:
+        """启动 runlog 写入器，失败不抛异常。"""
+        if self._runlog is not None:
+            return
+        try:
+            run_dir = self._ensure_run_dir(Path(outputs_dir))
+            writer = RunEventWriter(run_dir / "runlog" / "runlog.jsonl", self.run_id)
+            index = RunIndexBuilder(self.run_id)
+            self._runlog = RunLog(writer, index, run_dir / "runlog" / "run_index.json")
+        except Exception:
+            self._runlog = None
+
+    def emit_event(self, event_type: str, payload: dict) -> int:
+        """写入 runlog 事件，失败返回 -1。"""
+        if self._runlog is None:
+            return -1
+        try:
+            return self._runlog.emit(event_type, payload)
+        except Exception:
+            return -1
+
+    def end_runlog(self) -> None:
+        """关闭 runlog，失败不抛异常。"""
+        if self._runlog is None:
+            return
+        try:
+            self._runlog.close()
+        except Exception:
+            pass
+        self._runlog = None
+
     def record_artifact(self, ref: ArtifactRef, *, event_type: Optional[str] = None) -> None:
+        relative_path = ref.path or self._resolve_relative_artifact_path(ref)
+        if relative_path:
+            ref.path = relative_path
         self._artifact_records.append(
             {
                 "type": event_type,
                 "artifact": ref.to_dict(),
             }
         )
+        payload = {
+            "type": event_type or "artifact",
+            "artifact": ref.to_dict(),
+        }
+        run_dir_value = self._run_dir_relative or (str(self._run_dir) if self._run_dir else None)
+        if run_dir_value:
+            payload["run_dir"] = run_dir_value
+        if relative_path:
+            payload["path"] = relative_path
+        resolved_path = _resolve_artifact_path(ref)
+        if resolved_path:
+            payload["resolved_path"] = resolved_path
+        self.emit_event("ARTIFACT_WRITTEN", payload)
+
+    def _resolve_relative_artifact_path(self, ref: ArtifactRef) -> Optional[str]:
+        if self._run_dir is None:
+            return None
+        uri = getattr(ref, "uri", None)
+        if not uri:
+            return None
+        try:
+            path = Path(str(uri))
+            if not path.is_absolute():
+                return str(path)
+            run_dir = self._run_dir.resolve()
+            return str(path.resolve().relative_to(run_dir))
+        except Exception:
+            return None
 
     @property
     def current_iteration_index(self) -> int:
@@ -217,8 +312,9 @@ class RuntimeTracker:
         iteration_idx = self.current_iteration_index
         step_id: Optional[str] = None
 
-        if self._reporter:
+        if self._reporter or self._runlog:
             step_id = f"{iteration_idx}-{resolved_span_name}-{time.time_ns()}"
+        if self._reporter:
             self._reporter.record_agent_step_start(
                 step_id=step_id,
                 agent_name=str(agent_name),
@@ -236,6 +332,18 @@ class RuntimeTracker:
                 "Working...",
                 title=resolved_printer_title,
                 border_style=printer_border_style,
+            )
+
+        if step_id is not None:
+            self.emit_event(
+                "AGENT_STEP_START",
+                {
+                    "step_id": step_id,
+                    "agent_name": str(agent_name),
+                    "span_name": resolved_span_name,
+                    "iteration": iteration_idx,
+                    "status": "running",
+                },
             )
 
         return AgentStepHandle(
@@ -272,12 +380,26 @@ class RuntimeTracker:
                 border_style=handle.printer_border_style,
             )
 
+        duration_seconds = time.perf_counter() - handle.start_time
         if self._reporter and handle.step_id is not None:
             self._reporter.record_agent_step_end(
                 step_id=handle.step_id,
                 status=status,
-                duration_seconds=time.perf_counter() - handle.start_time,
+                duration_seconds=duration_seconds,
                 error=error,
+            )
+        if handle.step_id is not None:
+            self.emit_event(
+                "AGENT_STEP_END",
+                {
+                    "step_id": handle.step_id,
+                    "agent_name": handle.agent_name,
+                    "span_name": handle.span_name,
+                    "iteration": handle.iteration_idx,
+                    "status": status,
+                    "duration_seconds": duration_seconds,
+                    "error": error,
+                },
             )
 
     def on_run_start(self, state: Optional[Any], meta: Optional[Dict[str, Any]] = None) -> None:
@@ -288,7 +410,34 @@ class RuntimeTracker:
     def on_tool_call(self, state: Optional[Any], tool_call: Any) -> None:
         """工具调用事件钩子。"""
         _ = state
-        _ = tool_call
+        if tool_call is None:
+            return
+        meta = {}
+        if hasattr(tool_call, "meta") and isinstance(tool_call.meta, dict):
+            meta.update(tool_call.meta)
+        tool_name = _select_first(
+            getattr(tool_call, "name", None),
+            getattr(tool_call, "tool_name", None),
+            meta.get("tool_name"),
+            meta.get("tool"),
+            meta.get("name"),
+        )
+        call_id = _select_first(
+            getattr(tool_call, "call_id", None),
+            meta.get("call_id"),
+            meta.get("id"),
+        )
+        if tool_name and call_id:
+            self._tool_calls[str(call_id)] = str(tool_name)
+        args_text = truncate_text(serialize_content(getattr(tool_call, "args", None)), 2000)
+        self.emit_event(
+            "TOOL_CALL",
+            {
+                "tool_name": tool_name,
+                "call_id": call_id,
+                "args": args_text,
+            },
+        )
 
     def on_tool_result(self, state: Optional[Any], tool_result: Any) -> None:
         """工具结果事件钩子。"""
@@ -297,8 +446,6 @@ class RuntimeTracker:
         context = getattr(self, "context", None)
         state_obj = getattr(context, "state", None) if context is not None else None
         record_event = getattr(state_obj, "record_event", None)
-        if not callable(record_event):
-            return
         content = None
         if hasattr(tool_result, "data") and tool_result.data is not None:
             content = serialize_content(tool_result.data)
@@ -309,7 +456,38 @@ class RuntimeTracker:
         meta = {}
         if hasattr(tool_result, "meta") and isinstance(tool_result.meta, dict):
             meta.update(tool_result.meta)
-        record_event("TOOL_RESULT", content, meta=meta)
+        tool_name = _select_first(
+            meta.get("tool_name"),
+            meta.get("tool"),
+            meta.get("name"),
+            getattr(tool_result, "tool_name", None),
+            getattr(tool_result, "name", None),
+        )
+        call_id = _select_first(
+            meta.get("call_id"),
+            meta.get("id"),
+            getattr(tool_result, "call_id", None),
+        )
+        if not tool_name and call_id:
+            tool_name = self._tool_calls.get(str(call_id))
+        if tool_name and "tool_name" not in meta:
+            meta["tool_name"] = tool_name
+        if call_id and "call_id" not in meta:
+            meta["call_id"] = call_id
+        if callable(record_event):
+            record_event("TOOL_RESULT", content, meta=meta)
+        payload = {
+            "tool_name": tool_name,
+            "call_id": call_id,
+            "ok": getattr(tool_result, "ok", None),
+        }
+        if "duration_seconds" in meta:
+            payload["duration_seconds"] = meta.get("duration_seconds")
+        if getattr(tool_result, "error", None) is not None:
+            payload["error"] = str(getattr(tool_result, "error", None))
+        self.emit_event("TOOL_RESULT", payload)
+        if call_id:
+            self._tool_calls.pop(str(call_id), None)
 
     def on_model_output(
         self,
@@ -328,7 +506,21 @@ class RuntimeTracker:
     def on_error(self, state: Optional[Any], error: Exception) -> None:
         """编排器错误事件钩子，仅用于运行时跟踪。"""
         _ = state
-        _ = error
+        if error is None:
+            return
+        traceback_text = "".join(
+            traceback.format_exception(type(error), error, error.__traceback__)
+        )
+        self.emit_event(
+            "ERROR",
+            {
+                "where": "run",
+                "exception_type": error.__class__.__name__,
+                "message": str(error),
+                "traceback": truncate_text(traceback_text, 4000),
+                "iteration": self.current_iteration_index or None,
+            },
+        )
 
     def on_run_end(self, state: Optional[Any], meta: Optional[Dict[str, Any]] = None) -> None:
         """编排器运行结束事件钩子。"""
@@ -395,6 +587,7 @@ class RuntimeTracker:
             self.experiment_id = experiment_id
             self.run_id = experiment_id
         self._artifact_store = None
+        self._ensure_run_dir(Path(base_dir))
         if self._reporter is None:
             artifact_store = self.get_run_artifact_store()
             self._reporter = RunReporter(
@@ -405,6 +598,7 @@ class RuntimeTracker:
                 run_id=self.run_id,
                 console=self.console,
                 artifact_store=artifact_store,
+                artifact_settings=self._artifact_settings,
             )
         self._reporter.start(config)
         return self._reporter
@@ -431,6 +625,14 @@ class RuntimeTracker:
                 title=title,
                 border_style=border_style,
             )
+        if iteration is not None:
+            self.emit_event(
+                "ITERATION_START",
+                {
+                    "iteration": iteration,
+                    "group_id": group_id,
+                },
+            )
 
     def end_group(
         self,
@@ -438,6 +640,8 @@ class RuntimeTracker:
         *,
         is_done: bool = True,
         title: Optional[str] = None,
+        iteration: Optional[int] = None,
+        snapshot: Optional[dict[str, Any]] = None,
     ) -> None:
         """End a printer group and notify the reporter."""
         if self._reporter:
@@ -452,6 +656,17 @@ class RuntimeTracker:
                 is_done=is_done,
                 title=title,
             )
+        resolved_iteration = iteration
+        if resolved_iteration is None:
+            resolved_iteration = _extract_iteration_index(group_id)
+        if resolved_iteration is not None:
+            payload = {
+                "iteration": resolved_iteration,
+                "group_id": group_id,
+            }
+            if snapshot:
+                payload["snapshot"] = snapshot
+            self.emit_event("ITERATION_END", payload)
 
     def trace_context(self, name: str, metadata: Optional[Dict[str, Any]] = None):
         """Create a trace context manager.
@@ -561,6 +776,13 @@ class RuntimeTracker:
                 iteration=iteration,
                 group_id=group_id,
             )
+        panel_payload = {
+            "title": title,
+            "content": truncate_text(content, 4000),
+            "iteration": iteration,
+            "group_id": group_id,
+        }
+        self.emit_event("PANEL", panel_payload)
 
     @contextmanager
     def activate(self):
@@ -587,6 +809,32 @@ def get_current_tracker() -> Optional[RuntimeTracker]:
         The current RuntimeTracker or None if not in a runtime context
     """
     return _current_runtime_tracker.get()
+
+
+def _extract_iteration_index(group_id: Optional[str]) -> Optional[int]:
+    if not group_id or not group_id.startswith("iter-"):
+        return None
+    try:
+        return int(group_id.split("iter-", 1)[1])
+    except Exception:
+        return None
+
+
+def _select_first(*values: Any) -> Optional[Any]:
+    for value in values:
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _resolve_artifact_path(ref: ArtifactRef) -> Optional[str]:
+    uri = getattr(ref, "uri", None)
+    if not uri:
+        return None
+    try:
+        return str(Path(str(uri)).resolve())
+    except Exception:
+        return str(uri)
 
 
 def get_current_data_store() -> Optional[DataStore]:

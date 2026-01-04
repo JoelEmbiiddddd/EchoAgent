@@ -1,6 +1,8 @@
 import asyncio
 import functools
+import hashlib
 import time
+import traceback
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Dict, Mapping, Optional, Union
@@ -13,6 +15,9 @@ from echoagent.agent import (
     RuntimeTracker,
 )
 from echoagent.artifacts import RunReporter
+from echoagent.context.iteration_summarizer import IterationSummarizer
+from echoagent.context.snapshot import dump_json
+from echoagent.observability.runlog.utils import truncate_text
 from echoagent.utils import Printer, get_experiment_timestamp
 
 
@@ -99,6 +104,7 @@ class BaseWorkflow:
             trace_sensitive=self.trace_sensitive,
             experiment_id=self.experiment_id,
         )
+        self._iteration_summarizer: Optional[IterationSummarizer] = None
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Auto-setup context when assigned to enable transparent integration."""
@@ -200,12 +206,16 @@ class BaseWorkflow:
         *,
         is_done: bool = True,
         title: Optional[str] = None,
+        iteration: Optional[int] = None,
+        snapshot: Optional[dict[str, Any]] = None,
     ) -> None:
         """Delegate to tracker."""
         self._runtime_tracker.end_group(
             group_id,
             is_done=is_done,
             title=title,
+            iteration=iteration,
+            snapshot=snapshot,
         )
 
     # ============================================
@@ -362,29 +372,59 @@ class BaseWorkflow:
         if start_timer:
             self.start_time = time.time()
 
+        effective_outputs_dir = Path(outputs_dir) if outputs_dir else Path(self.config.pipeline.get("outputs_dir", "outputs"))
+        effective_workflow_name = workflow_name or self.workflow_name
+
         trace_ctx = self._initialize_run(
             additional_logging=additional_logging,
             enable_reporter=enable_reporter,
-            outputs_dir=outputs_dir,
+            outputs_dir=effective_outputs_dir,
             enable_printer=enable_printer,
-            workflow_name=workflow_name,
+            workflow_name=effective_workflow_name,
             trace_metadata=trace_metadata,
         )
 
         # Track what was actually created (not pre-existing)
         created_reporter = enable_reporter and not had_reporter and self.reporter is not None
         created_printer = enable_printer and not had_printer and self.printer is not None
+        self.runtime_tracker.start_runlog(outputs_dir=effective_outputs_dir)
+        run_dir_value = self.runtime_tracker.run_dir_relative or None
+        self.runtime_tracker.emit_event(
+            "RUN_START",
+            {
+                "pipeline_slug": self.pipeline_slug,
+                "workflow_name": effective_workflow_name,
+                "experiment_id": self.experiment_id,
+                "provider": getattr(self.config, "provider", None),
+                "model": getattr(getattr(self.config, "llm", None), "model_name", None),
+                "run_dir": run_dir_value,
+            },
+        )
 
+        status = "success"
+        error_message: Optional[str] = None
         try:
             with trace_ctx:
                 # Activate tracker so agents can access it automatically via get_current_tracker()
                 with self.runtime_tracker.activate():
                     yield trace_ctx
+        except Exception as exc:
+            status = "error"
+            error_message = str(exc)
+            raise
         finally:
             # Only cleanup resources that were created by this context
             # Note: stop_printer() handles both printer and reporter cleanup
             if created_printer or created_reporter:
                 self.stop_printer()
+            self.runtime_tracker.emit_event(
+                "RUN_END",
+                {
+                    "status": status,
+                    "error": error_message,
+                },
+            )
+            self.runtime_tracker.end_runlog()
 
     # ============================================
     # Iteration & Group Management
@@ -432,8 +472,57 @@ class BaseWorkflow:
             is_done: Whether the iteration completed successfully (default: True)
         """
         self.context.mark_iteration_complete()
+        record = self.context.state.current_iteration
+        if record.is_complete() and not record.summarized:
+            digest = self._get_iteration_summarizer().summarize_sync(
+                self.context,
+                record,
+                query=getattr(self.context.state, "query", None),
+            )
+            record.set_digest(digest)
+
+        snapshot_payload: Optional[dict[str, Any]] = None
+        run_dir = self.runtime_tracker.run_dir
+        if run_dir is not None:
+            try:
+                snapshot_path = Path(run_dir) / "snapshots" / f"iter_{record.index}.json"
+                dump_json(self.context.state, snapshot_path)
+                snapshot_hash = hashlib.sha256(snapshot_path.read_bytes()).hexdigest()
+                snapshot_payload = {
+                    "path": f"snapshots/iter_{record.index}.json",
+                    "hash": snapshot_hash,
+                }
+            except Exception as exc:
+                traceback_text = "".join(
+                    traceback.format_exception(type(exc), exc, exc.__traceback__)
+                )
+                self.runtime_tracker.emit_event(
+                    "ERROR",
+                    {
+                        "where": "snapshot",
+                        "exception_type": exc.__class__.__name__,
+                        "message": str(exc),
+                        "traceback": truncate_text(traceback_text, 4000),
+                        "iteration": record.index,
+                    },
+                )
         group_id = f"iter-{self.iteration}"
-        self.end_group(group_id, is_done=is_done)
+        self.end_group(
+            group_id,
+            is_done=is_done,
+            iteration=record.index,
+            snapshot=snapshot_payload,
+        )
+
+    def _get_iteration_summarizer(self) -> IterationSummarizer:
+        if self._iteration_summarizer is None:
+            llm_name = getattr(getattr(self.config, "llm", None), "model_name", None)
+            provider = getattr(self.config, "provider", None)
+            self._iteration_summarizer = IterationSummarizer(
+                llm=str(llm_name) if llm_name else "",
+                provider=provider,
+            )
+        return self._iteration_summarizer
 
     def iterate(
         self,

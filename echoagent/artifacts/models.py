@@ -39,21 +39,27 @@ class ArtifactRef:
     kind: ArtifactKind
     uri: str
     meta: dict[str, Any]
+    path: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data = {
             "id": self.id,
             "kind": self.kind.value,
             "uri": self.uri,
             "meta": dict(self.meta or {}),
         }
+        if self.path:
+            data["path"] = self.path
+        return data
 
 
 @dataclass
 class ArtifactSettings:
     root_dir: Optional[str] = None
     enabled: bool = True
-    save_parse_failures: bool = True
+    debug_enabled: bool = False
+    save_terminal_log: bool = False
+    save_parse_failures: bool = False
     save_llm_output: bool = False
 
     @classmethod
@@ -64,6 +70,8 @@ class ArtifactSettings:
         return cls(
             root_dir=root_dir or None,
             enabled=bool(artifacts_settings.get("enabled", True)),
-            save_parse_failures=bool(artifacts_settings.get("save_parse_failures", True)),
+            debug_enabled=bool(artifacts_settings.get("debug_enabled", False)),
+            save_terminal_log=bool(artifacts_settings.get("save_terminal_log", False)),
+            save_parse_failures=bool(artifacts_settings.get("save_parse_failures", False)),
             save_llm_output=bool(artifacts_settings.get("save_llm_output", False)),
         )

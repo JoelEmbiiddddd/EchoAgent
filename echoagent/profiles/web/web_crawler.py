@@ -28,8 +28,17 @@ CRITICAL JSON FORMATTING REQUIREMENTS:
 * All URLs must have backslashes escaped (e.g., https://example.com becomes https://example.com)
 * Do NOT output anything except the JSON object
 
+STRICT OUTPUT RULES:
+* Do not output <think> or any analysis text
+* Do not wrap JSON in Markdown or code fences
+* If you must report an error, return a JSON object with "output" describing the error
+
 Follow the JSON schema below:
 {ToolAgentOutput.model_json_schema()}
+
+Language requirement:
+- JSON string fields must be in Simplified Chinese.
+- Keep URLs and citations unchanged.
 """,
     runtime_template="""{runtime_input}
 

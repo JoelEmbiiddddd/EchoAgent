@@ -13,7 +13,7 @@ from pygments import highlight
 from pygments.formatters import HtmlFormatter
 from pygments.lexers import JsonLexer, PythonLexer, get_lexer_by_name
 
-from echoagent.artifacts.models import ArtifactRef
+from echoagent.artifacts.models import ArtifactRef, ArtifactSettings
 from echoagent.artifacts.store import ArtifactStore, FileSystemArtifactStore
 from echoagent.artifacts.writers.text import TextWriter
 
@@ -72,6 +72,7 @@ class ArtifactWriter:
         experiment_id: str,
         run_id: str,
         artifact_store: Optional[ArtifactStore] = None,
+        artifact_settings: Optional[ArtifactSettings] = None,
     ) -> None:
         self.base_dir = base_dir
         self.pipeline_slug = pipeline_slug
@@ -80,10 +81,12 @@ class ArtifactWriter:
         self.run_id = run_id
 
         self.run_dir = base_dir / "runs" / run_id
-        self.terminal_md_path = self.run_dir / "terminal_log.md"
-        self.terminal_html_path = self.run_dir / "terminal_log.html"
-        self.final_report_md_path = self.run_dir / "final_report.md"
-        self.final_report_html_path = self.run_dir / "final_report.html"
+        self.reports_dir = self.run_dir / "reports"
+        self.debug_dir = self.run_dir / "debug"
+        self.terminal_md_path = self.debug_dir / "terminal_log.md"
+        self.terminal_html_path = self.debug_dir / "terminal_log.html"
+        self.final_report_md_path = self.reports_dir / "final_report.md"
+        self.final_report_html_path = self.reports_dir / "final_report.html"
 
         self._panels: List[PanelRecord] = []
         self._agent_steps: Dict[str, AgentStepRecord] = {}
@@ -95,6 +98,7 @@ class ArtifactWriter:
         self._started_at_iso: Optional[str] = None
         self._finished_at_iso: Optional[str] = None
         self._artifact_store = artifact_store
+        self._artifact_settings = artifact_settings or ArtifactSettings()
         self._artifact_refs: List[ArtifactRef] = []
         self._text_writer = TextWriter()
 
@@ -104,7 +108,8 @@ class ArtifactWriter:
         """Prepare filesystem layout and capture start metadata."""
         if self._start_time is not None:
             return
-        self.run_dir.mkdir(parents=True, exist_ok=True)
+        for subdir in ("reports", "debug", "runlog", "snapshots"):
+            (self.run_dir / subdir).mkdir(parents=True, exist_ok=True)
         self._start_time = time.time()
         self._started_at_iso = _utc_timestamp()
 
@@ -287,34 +292,34 @@ class ArtifactWriter:
         self._finished_at_iso = _utc_timestamp()
         duration = round(time.time() - self._start_time, 3)
 
-        terminal_sections = self._build_terminal_sections()
-        terminal_md = self._render_terminal_markdown(duration, terminal_sections)
-        terminal_html = self._render_terminal_html(duration, terminal_sections)
-
         store = self._get_store()
         refs: List[ArtifactRef] = []
-        refs.append(
-            self._text_writer.write(
-                store,
-                "terminal_log.md",
-                terminal_md,
-                meta={"content_type": "text/markdown; charset=utf-8"},
+        if self._artifact_settings.debug_enabled and self._artifact_settings.save_terminal_log:
+            terminal_sections = self._build_terminal_sections()
+            terminal_md = self._render_terminal_markdown(duration, terminal_sections)
+            terminal_html = self._render_terminal_html(duration, terminal_sections)
+            refs.append(
+                self._text_writer.write(
+                    store,
+                    "debug/terminal_log.md",
+                    terminal_md,
+                    meta={"content_type": "text/markdown; charset=utf-8"},
+                )
             )
-        )
-        refs.append(
-            self._text_writer.write(
-                store,
-                "terminal_log.html",
-                terminal_html,
-                meta={"content_type": "text/html; charset=utf-8"},
+            refs.append(
+                self._text_writer.write(
+                    store,
+                    "debug/terminal_log.html",
+                    terminal_html,
+                    meta={"content_type": "text/html; charset=utf-8"},
+                )
             )
-        )
 
         final_md, final_html = self._render_final_report()
         refs.append(
             self._text_writer.write(
                 store,
-                "final_report.md",
+                "reports/final_report.md",
                 final_md,
                 meta={"content_type": "text/markdown; charset=utf-8"},
             )
@@ -322,7 +327,7 @@ class ArtifactWriter:
         refs.append(
             self._text_writer.write(
                 store,
-                "final_report.html",
+                "reports/final_report.html",
                 final_html,
                 meta={"content_type": "text/html; charset=utf-8"},
             )

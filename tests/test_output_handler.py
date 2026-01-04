@@ -4,6 +4,7 @@ import pytest
 from pydantic import BaseModel
 
 from echoagent.agent.output_handler import OutputHandler
+from echoagent.profiles.base import ToolAgentOutput
 
 
 class SampleSchema(BaseModel):
@@ -51,3 +52,23 @@ def test_output_handler_strict_failure() -> None:
 
     with pytest.raises(Exception):
         handler.parse("bad", schema=SampleSchema, mode="strict")
+
+
+def test_output_handler_strict_json_with_prefix() -> None:
+    handler = OutputHandler()
+
+    raw = "<think>preface</think>\n{\"a\": 3}\n"
+    parsed = handler.parse(raw, schema=SampleSchema, mode="strict")
+
+    assert parsed.ok is True
+    assert parsed.value.a == 3
+
+
+def test_output_handler_strict_tool_output_fallback() -> None:
+    handler = OutputHandler()
+
+    raw = "<think>preface</think>\n[1]\n"
+    parsed = handler.parse(raw, schema=ToolAgentOutput, mode="strict")
+
+    assert parsed.ok is True
+    assert parsed.value.output == "[1]"

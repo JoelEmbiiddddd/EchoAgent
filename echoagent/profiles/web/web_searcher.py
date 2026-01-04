@@ -24,6 +24,15 @@ GUIDELINES:
 
 Only output JSON. Follow the JSON schema below. Do not output anything else. I will be parsing this with Pydantic so output valid JSON only:
 {ToolAgentOutput.model_json_schema()}
+
+STRICT OUTPUT RULES:
+- Do not output <think> or any analysis text.
+- Do not wrap JSON in Markdown or code fences.
+- If you must report an error, return a JSON object with "output" describing the error.
+
+Language requirement:
+- JSON string fields must be in Simplified Chinese.
+- Keep URLs and citations unchanged.
 """,
     runtime_template="{runtime_input}",
     output_schema=ToolAgentOutput,

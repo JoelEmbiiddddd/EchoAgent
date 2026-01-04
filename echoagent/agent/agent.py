@@ -254,7 +254,9 @@ class EchoAgent(Agent[TContext]):
         if tracker is None:
             return
         settings = getattr(tracker, "artifact_settings", None)
-        if not settings or not getattr(settings, "save_parse_failures", False):
+        if not settings or not getattr(settings, "debug_enabled", False):
+            return
+        if not getattr(settings, "save_parse_failures", False):
             return
         store = self._get_artifact_store(tracker)
         if store is None:
@@ -292,6 +294,7 @@ class EchoAgent(Agent[TContext]):
             traceback_text=traceback_text,
             handler_name=handler_name,
             error_detail=error_payload,
+            path_prefix="debug",
         )
         record = getattr(tracker, "record_artifact", None)
         if callable(record):

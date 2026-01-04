@@ -1,3 +1,8 @@
+下面给你一份**可直接替换/合并进 README.md 的 “uv + Usage” 版本**，风格尽量贴近你给的 ContextAgent 示例，同时也符合你们最新的 P0 输出规范（所有 run 产物都在 `outputs/runs/{run_id}/`，只默认生成 final_report）。
+
+> 说明：我不会在正文里写“脚本安装 uv 的链接”这种多余东西；但会保留和 ContextAgent 类似的结构与命令形式。你可以直接复制粘贴。
+
+````md
 # EchoAgent
 
 > 🧠 **Context-First Agent Runtime for Building Inspectable AI Systems**
@@ -25,36 +30,92 @@ EchoAgent focuses on **making it understandable, controllable, and evolvable**.
 
 ---
 
-## 🚀 Quick Start
+## ⚡ Using uv (Recommended)
 
-### 1️⃣ Install
+This project uses **uv** for fast, reliable Python package management and reproducible environments.
+
+### Install uv
+macOS/Linux:
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+````
+
+### Setup Environment
 
 ```bash
+# Clone the repository
 git clone https://github.com/JoelEmbiiddddd/EchoAgent.git
 cd EchoAgent
+
+# Create .env
 cp .env.example .env
+
+# Sync dependencies (creates .venv and uses uv.lock if present)
+uv sync
 ```
 
-### 2️⃣ Configure
+> Tip: Commit `uv.lock` to keep environments reproducible across machines.
+
+---
+
+## 🔐 Configure API Keys
+
+EchoAgent requires API keys for LLM providers and tools.
+Set your environment in `.env`:
 
 ```env
 OPENAI_API_KEY=your_key
 OPENAI_MODEL=gpt-4.1
 ```
 
-### 3️⃣ Run a workflow
+See `.env.example` for full configuration options.
+
+---
+
+## 🚀 Quick Start
+
+### Run a workflow (recommended)
 
 ```bash
-python examples/web_researcher.py
+uv run python workflows/web_researcher.py
 ```
 
-You will see:
+After a run completes, you will get a **single run directory**:
 
-* structured logs
-* step-by-step execution
-* artifacts generated under `outputs/`
+```
+outputs/runs/{run_id}/
+  reports/
+    final_report.md
+    final_report.html
+  runlog/
+    runlog.jsonl
+    run_index.json
+  snapshots/
+    iter_1.json
+    iter_2.json
+    ...
+  debug/   # empty by default (disabled)
+```
 
-> 💡 Tip: Every run is inspectable and replayable.
+* **final_report.md/html**: the final result (what you usually care about)
+* **runlog/runlog.jsonl**: structured event timeline (steps/tools/errors)
+* **runlog/run_index.json**: fast index for UI/replay
+* **snapshots/**: per-iteration snapshots for resume/replay
+* **debug/**: only generated when debug mode is enabled
+
+---
+
+## ✅ Testing
+
+```bash
+uv run pytest -q
+```
+
+Optional self-check:
+
+```bash
+uv run python -m compileall echoagent
+```
 
 ---
 
@@ -80,21 +141,15 @@ This makes behavior:
 
 ```mermaid
 flowchart TD
-  %% =========================
-  %% EchoAgent: Context-first Runtime
-  %% =========================
-
   U[User / Workflow] --> W[Workflow Runner<br/>workflows/*]
 
   subgraph R["Runtime Core (echoagent/)"]
     direction TB
-
     C[(Context Store<br/>echoagent/context)]
     IB[Instruction Builder<br/>echoagent/agent/prompting]
     EX[Executor<br/>echoagent/agent/executor.py]
     OH[Output Handler<br/>echoagent/agent/output_handler.py]
     TR[Tracker / Observability<br/>echoagent/agent/tracker.py]
-
     C --> IB --> EX --> OH --> TR
     TR -->|writes| C
   end
@@ -112,16 +167,20 @@ flowchart TD
   EX -->|tool call| TOOLS
   EX -->|skill activation| SKILLS
 
-  subgraph O["Artifacts & Outputs"]
+  subgraph O["Outputs"]
     direction TB
-    LOGS[Structured Logs]
-    EVENTS[Runtime Events]
-    ARTS[Run Artifacts<br/>outputs/*]
+    OUT[outputs/runs/{run_id}/]
+    REPORTS[reports/<br/>final_report.*]
+    RUNLOG[runlog/<br/>runlog.jsonl + run_index.json]
+    SNAP[snapshots/<br/>iter_*.json]
+    DEBUG[debug/<br/>(off by default)]
   end
 
-  TR --> LOGS
-  TR --> EVENTS
-  TR --> ARTS
+  TR --> OUT
+  OUT --> REPORTS
+  OUT --> RUNLOG
+  OUT --> SNAP
+  OUT --> DEBUG
 ```
 
 ---
@@ -186,18 +245,15 @@ model_override: gpt-4.1
 You are a research assistant...
 ```
 
-Skills are **documents**, not functions — enabling discovery, routing, and governance.
-
 ---
 
 ## 🔍 Observability & Debugging
 
 EchoAgent records:
 
-* structured runtime events
-* grouped logs by phase
-* explicit error blocks
-* persistent artifacts
+* structured runtime events (runlog.jsonl)
+* iteration snapshots (snapshots/)
+* final result report (final_report.*)
 
 This enables:
 
@@ -222,32 +278,9 @@ EchoAgent/
 │
 ├── workflows/        # opinionated pipelines
 ├── examples/         # runnable demos
-├── frontend/         # optional UI
-├── outputs/          # runtime artifacts (gitignored)
+├── outputs/          # runtime outputs (gitignored)
 └── tests/
 ```
-
----
-
-## 🧭 Roadmap
-
-### Near-term
-
-* Improved skill routing
-* Iteration-aware frontend
-* Run replay tooling
-
-### Mid-term
-
-* Multi-agent orchestration
-* Capability sandboxing
-* Structured telemetry export
-
-### Long-term
-
-* Standardized skill protocols
-* Pluggable memory backends
-* Production hardening
 
 ---
 

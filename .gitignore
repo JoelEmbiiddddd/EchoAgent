@@ -1,14 +1,15 @@
 # Project-specific
-openspec
+.echospec
 .codex
 .env
 AGENTS.md
 verification.md
 data
-refactor
+code_docs
 .serena
 outputs/
 *.tar
+.echoagent/
 
 
 # Python cache

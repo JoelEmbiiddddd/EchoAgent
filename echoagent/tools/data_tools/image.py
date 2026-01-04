@@ -2,14 +2,12 @@
 
 from typing import Union, Dict, Any, Optional
 import os
-import base64
 from io import BytesIO
 from pathlib import Path
 from agents import function_tool
 from agents.run_context import RunContextWrapper
 from echoagent.utils.data_store import DataStore
 from loguru import logger
-import google.generativeai as genai
 from PIL import Image
 import requests
 
@@ -52,19 +50,20 @@ def _load_image(image_path: str) -> Image.Image:
         raise
 
 
-def _image_to_base64(image: Image.Image) -> str:
-    """Convert a PIL Image to base64 encoded string.
-
-    Args:
-        image: PIL Image object
-
-    Returns:
-        Base64 encoded string of the image
-    """
+def _image_to_bytes(image: Image.Image) -> bytes:
+    """Convert a PIL Image to JPEG bytes."""
     buffered = BytesIO()
     image.save(buffered, format="JPEG")
-    img_str = base64.b64encode(buffered.getvalue()).decode()
-    return f"data:image/jpeg;base64,{img_str}"
+    return buffered.getvalue()
+
+
+def _get_genai_client(api_key: str):
+    try:
+        from google import genai
+        from google.genai import types
+    except Exception:
+        return None, None, "Error: google-genai is not installed. Please install google-genai to use image_qa."
+    return genai.Client(api_key=api_key), types, None
 
 
 @function_tool
@@ -100,14 +99,14 @@ async def image_qa(
         if not api_key:
             return "Error: GEMINI_API_KEY environment variable not set. Please set it to use image_qa."
 
-        genai.configure(api_key=api_key)
-
-        # Initialize the model
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        client, types, error = _get_genai_client(api_key)
+        if error:
+            return error
 
         # Load the image
         logger.info(f"Loading image from: {image_path}")
         image = _load_image(image_path)
+        image_bytes = _image_to_bytes(image)
 
         # Prepare the prompt
         if question is None:
@@ -118,10 +117,27 @@ async def image_qa(
             logger.info(f"Asking question: {question}")
 
         # Generate response
-        response = model.generate_content([prompt, image])
+        response = None
+        try:
+            content = types.Content(
+                role="user",
+                parts=[
+                    types.Part.from_text(text=prompt),
+                    types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
+                ],
+            )
+            response = client.models.generate_content(
+                model="gemini-1.5-flash",
+                contents=content,
+            )
+        finally:
+            try:
+                client.close()
+            except Exception:
+                pass
 
         # Extract and return the text response
-        answer = response.text
+        answer = response.text if response is not None else ""
         logger.info(f"Image QA response received: {answer[:100]}...")
 
         # Store the result in context if needed

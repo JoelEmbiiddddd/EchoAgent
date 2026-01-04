@@ -2,12 +2,13 @@
 
 from typing import Union, Dict, Any
 import os
+import tempfile
 from pathlib import Path
 from agents import function_tool
 from agents.run_context import RunContextWrapper
 from echoagent.utils.data_store import DataStore
 from loguru import logger
-import google.generativeai as genai
+import requests
 
 
 @function_tool
@@ -42,16 +43,17 @@ async def video_qa(
         if not api_key:
             return "Error: GEMINI_API_KEY environment variable not set. Please set it to use video_qa."
 
-        genai.configure(api_key=api_key)
-
-        # Initialize the model
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        client, error = _get_genai_client(api_key)
+        if error:
+            return error
 
         # Prepare the video input
+        temp_path: Path | None = None
         if video_url.startswith("http://") or video_url.startswith("https://"):
             # Use URL directly
             logger.info(f"Analyzing video from URL: {video_url}")
-            video_file = genai.upload_file(path=video_url)
+            temp_path = _download_to_temp_file(video_url)
+            upload_path = temp_path
         else:
             # Handle local file path
             video_path = Path(video_url)
@@ -59,27 +61,30 @@ async def video_qa(
                 return f"Error: Video file not found: {video_url}"
 
             logger.info(f"Uploading and analyzing local video: {video_path}")
-            video_file = genai.upload_file(path=str(video_path.resolve()))
-
-        # Wait for the file to be processed
-        logger.info("Waiting for video to be processed...")
-        import time
-        while video_file.state.name == "PROCESSING":
-            time.sleep(1)
-            video_file = genai.get_file(video_file.name)
-
-        if video_file.state.name == "FAILED":
-            return f"Error: Video processing failed for {video_url}"
+            upload_path = video_path.resolve()
 
         # Generate response
         logger.info(f"Asking question: {question}")
-        response = model.generate_content(
-            [video_file, question],
-            request_options={"timeout": 600}
-        )
+        response = None
+        try:
+            video_file = client.files.upload(file=str(upload_path))
+            response = client.models.generate_content(
+                model="gemini-1.5-flash",
+                contents=[question, video_file],
+            )
+        finally:
+            if temp_path is not None:
+                try:
+                    temp_path.unlink()
+                except Exception:
+                    pass
+            try:
+                client.close()
+            except Exception:
+                pass
 
         # Extract and return the text response
-        answer = response.text
+        answer = response.text if response is not None else ""
         logger.info(f"Video QA response received: {answer[:100]}...")
 
         # Store the result in context if needed
@@ -103,3 +108,22 @@ async def video_qa(
         error_msg = f"Error analyzing video: {str(e)}"
         logger.error(error_msg)
         return error_msg
+
+
+def _get_genai_client(api_key: str):
+    try:
+        from google import genai
+    except Exception:
+        return None, "Error: google-genai is not installed. Please install google-genai to use video_qa."
+    return genai.Client(api_key=api_key), None
+
+
+def _download_to_temp_file(url: str) -> Path:
+    response = requests.get(url, stream=True, timeout=30)
+    response.raise_for_status()
+    suffix = Path(url).suffix or ".mp4"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as handle:
+        for chunk in response.iter_content(chunk_size=1024 * 1024):
+            if chunk:
+                handle.write(chunk)
+        return Path(handle.name)

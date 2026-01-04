@@ -10,7 +10,7 @@ from typing import Any, Optional
 from rich.console import Console
 
 from echoagent.artifacts.artifact_writer import ArtifactWriter
-from echoagent.artifacts.models import ArtifactRef
+from echoagent.artifacts.models import ArtifactRef, ArtifactSettings
 from echoagent.artifacts.store import ArtifactStore
 from echoagent.artifacts.terminal_writer import TerminalWriter
 
@@ -55,6 +55,7 @@ class RunReporter:
         run_id: str,
         console: Optional[Console] = None,
         artifact_store: Optional[ArtifactStore] = None,
+        artifact_settings: Optional[ArtifactSettings] = None,
     ) -> None:
         self.base_dir = base_dir
         self.pipeline_slug = pipeline_slug
@@ -64,10 +65,12 @@ class RunReporter:
         self.console = console
 
         self.run_dir = base_dir / "runs" / run_id
-        self.terminal_md_path = self.run_dir / "terminal_log.md"
-        self.terminal_html_path = self.run_dir / "terminal_log.html"
-        self.final_report_md_path = self.run_dir / "final_report.md"
-        self.final_report_html_path = self.run_dir / "final_report.html"
+        self.reports_dir = self.run_dir / "reports"
+        self.debug_dir = self.run_dir / "debug"
+        self.terminal_md_path = self.debug_dir / "terminal_log.md"
+        self.terminal_html_path = self.debug_dir / "terminal_log.html"
+        self.final_report_md_path = self.reports_dir / "final_report.md"
+        self.final_report_html_path = self.reports_dir / "final_report.html"
 
         self._lock = threading.RLock()
 
@@ -79,6 +82,7 @@ class RunReporter:
             experiment_id=experiment_id,
             run_id=run_id,
             artifact_store=artifact_store,
+            artifact_settings=artifact_settings,
         )
         self._terminal_writer = TerminalWriter(
             run_dir=self.run_dir,

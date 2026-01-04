@@ -99,18 +99,24 @@ class SkillChatWorkflow(BaseWorkflow):
         self.update_printer("initialization", "Skill chat workflow initialized", is_done=True)
         self.update_printer("chat", "Chatting with skill routing...")
 
-        result = await self.chat_agent(query_obj)
-
-        self.update_printer("chat", "Chat complete", is_done=True)
-
-        final_result = getattr(result, "response", None) or getattr(result, "output", None) or result
-        if self.reporter is not None:
-            try:
-                self.reporter.set_final_result(final_result)
-            except Exception:
-                pass
-
-        return final_result
+        success = False
+        iteration_started = False
+        try:
+            self.begin_iteration(title="Chat")
+            iteration_started = True
+            result = await self.chat_agent(query_obj)
+            self.update_printer("chat", "Chat complete", is_done=True)
+            final_result = getattr(result, "response", None) or getattr(result, "output", None) or result
+            if self.reporter is not None:
+                try:
+                    self.reporter.set_final_result(final_result)
+                except Exception:
+                    pass
+            success = True
+            return final_result
+        finally:
+            if iteration_started:
+                self.end_iteration(is_done=success)
 
 
 async def _main() -> None:

@@ -24,7 +24,11 @@ Provide concise but insightful observations that help guide the research process
 - What we've learned so far
 - What patterns are emerging
 - What areas need deeper investigation
-- Strategic recommendations for next steps""",
+- Strategic recommendations for next steps
+
+Language requirement:
+- Respond in Simplified Chinese.
+- Keep proper nouns, file paths, and URLs unchanged.""",
     runtime_template="""You are starting iteration {iteration} of your research process.
 
 ORIGINAL QUERY:
