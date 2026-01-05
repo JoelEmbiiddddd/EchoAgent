@@ -138,15 +138,15 @@ This makes behavior:
 
 ```mermaid
 flowchart TD
-  U[User / Workflow] --> W[Workflow Runner<br/>workflows/*]
+  U["User / Workflow"] --> W["Workflow Runner<br/>workflows/*"]
 
   subgraph R["Runtime Core (echoagent/)"]
     direction TB
-    C[(Context Store<br/>echoagent/context)]
-    IB[Instruction Builder<br/>echoagent/agent/prompting]
-    EX[Executor<br/>echoagent/agent/executor.py]
-    OH[Output Handler<br/>echoagent/agent/output_handler.py]
-    TR[Tracker / Observability<br/>echoagent/agent/tracker.py]
+    C["(Context Store)<br/>echoagent/context"]
+    IB["Instruction Builder<br/>echoagent/agent/prompting"]
+    EX["Executor<br/>echoagent/agent/executor.py"]
+    OH["Output Handler<br/>echoagent/agent/output_handler.py"]
+    TR["Tracker / Observability<br/>echoagent/agent/tracker.py"]
     C --> IB --> EX --> OH --> TR
     TR -->|writes| C
   end
@@ -155,9 +155,9 @@ flowchart TD
 
   subgraph E["Execution Surface"]
     direction LR
-    LLM[LLM Provider<br/>echoagent/llm/*]
-    TOOLS[Tool Runtime<br/>echoagent/tools]
-    SKILLS[Skill System<br/>echoagent/skills]
+    LLM["LLM Provider<br/>echoagent/llm/*"]
+    TOOLS["Tool Runtime<br/>echoagent/tools"]
+    SKILLS["Skill System<br/>echoagent/skills"]
   end
 
   EX -->|model call| LLM
@@ -167,10 +167,10 @@ flowchart TD
   subgraph O["Outputs"]
     direction TB
     OUT["outputs/runs/&#123;run_id&#125;/"]
-    REPORTS[reports/<br/>final_report.*]
-    RUNLOG[runlog/<br/>runlog.jsonl + run_index.json]
-    SNAP[snapshots/<br/>iter_*.json]
-    DEBUG[debug/<br/>(off by default)]
+    REPORTS["reports/<br/>final_report.*"]
+    RUNLOG["runlog/<br/>runlog.jsonl + run_index.json"]
+    SNAP["snapshots/<br/>iter_*.json"]
+    DEBUG["debug/<br/>&#40;off by default&#41;"]
   end
 
   TR --> OUT
@@ -296,6 +296,7 @@ Guidelines:
 ## 📄 License
 
 Provided under the repository license.
+
 
 
 
