@@ -166,7 +166,7 @@ flowchart TD
 
   subgraph O["Outputs"]
     direction TB
-    OUT[outputs/runs/{run_id}/]
+    OUT["outputs/runs/&#123;run_id&#125;/"]
     REPORTS[reports/<br/>final_report.*]
     RUNLOG[runlog/<br/>runlog.jsonl + run_index.json]
     SNAP[snapshots/<br/>iter_*.json]
@@ -296,4 +296,5 @@ Guidelines:
 ## 📄 License
 
 Provided under the repository license.
+
 
