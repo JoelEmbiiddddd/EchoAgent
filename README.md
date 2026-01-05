@@ -74,7 +74,7 @@ See `.env.example` for full configuration options.
 ### Run a workflow (recommended)
 
 ```bash
-uv run python workflows/web_researcher.py
+uv run python examples/web_researcher.py
 ```
 
 After a run completes, you will get a **single run directory**:
@@ -296,6 +296,7 @@ Guidelines:
 ## 📄 License
 
 Provided under the repository license.
+
 
 
 
